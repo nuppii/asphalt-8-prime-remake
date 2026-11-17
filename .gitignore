@@ -1,0 +1,20 @@
+# Local game copies, builds and user state
+*.exe
+*.dll
+*.obj
+*.bin
+*.pdb
+*.appx
+*.appxbundle
+*.msix
+*.CT
+*.log
+*.original
+__pycache__/
+_offline_patch_backup/
+LocalState/
+Data/
+Assets/
+build/
+.env
+.env.*
