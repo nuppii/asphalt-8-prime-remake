@@ -352,6 +352,29 @@ internal static class InjectionCatalog
     // The callback opens the original Local Wi-Fi menu on the game UI thread.
     internal static readonly InjectionHack MultiplayerTile = new InjectionHack("Offline Multiplayer Tile",
         0x42F490, "55 8B EC 6A FF", (module,cave) => Raw("8B 44 24 04 C7 00 04 00 00 00 C2 04 00"));
+    internal static readonly InjectionHack NativeRoomName = new InjectionHack("Native Room Name",
+        0xA9B1B7, "68 ?? ?? ?? ??", (module,cave) =>
+        {
+            if(NativeLobbyHook.StateAddress==0)throw new InvalidOperationException("Native lobby state is not installed.");
+            return Code(cave,Raw("68 "+I32(unchecked((int)(NativeLobbyHook.StateAddress+212)))),Jmp(cave+5,module+0xA9B1BC));
+        });
+    internal static readonly InjectionHack NativeClassicLaps = new InjectionHack("Native Classic Laps",
+        0x96DB9F,"83 C6 28 83 7E 14 10",(module,cave)=>
+        {
+            if(NativeLobbyHook.StateAddress==0)throw new InvalidOperationException("Native lobby state is not installed.");
+            var bytes=new List<byte>();
+            bytes.AddRange(Raw("9C 60 A1 "+I32(unchecked((int)(NativeLobbyHook.StateAddress+40)))));
+            var exits=new List<int>();
+            Action<byte> skip=op=>{bytes.Add(op);exits.Add(bytes.Count);bytes.Add(0);};
+            bytes.AddRange(Raw("83 F8 01"));skip(0x72);
+            bytes.AddRange(Raw("83 F8 3C"));skip(0x77);
+            bytes.AddRange(Raw("83 BF 08 01 00 00 01"));skip(0x75);
+            bytes.AddRange(Raw("83 BF 20 01 00 00 00"));skip(0x75);
+            bytes.AddRange(Raw("89 87 30 01 00 00"));
+            foreach(int offset in exits)bytes[offset]=(byte)(bytes.Count-offset-1);
+            bytes.AddRange(Raw("61 9D 83 C6 28 83 7E 14 10"));
+            bytes.AddRange(Jmp(cave+bytes.Count,module+0x96DBA6));return bytes.ToArray();
+        });
     private static readonly Dictionary<string, int> Values = new Dictionary<string, int>
     {
         { "Credits", 10000000 }, { "Nitro Ratio", BitConverter.ToInt32(BitConverter.GetBytes(8.0f), 0) },
@@ -364,7 +387,7 @@ internal static class InjectionCatalog
     internal static readonly InjectionHack[] Hacks =
     {
         new InjectionHack("Driver Name", 0xCD2FF0, "55 8B EC 83 E4 F8", BuildDriverName),
-        new InjectionHack("Wallet Editor", 0xBD68E0, "51 56 8B F1 57", BuildWalletEditor),
+        new InjectionHack("Wallet Editor", 0xBD68E0, "51 56 8B F1 57", BuildWalletEditor, NativeLobbyHook.AllocationSize),
         new InjectionHack("Offline Standard Upgrade Credits", 0x625970, "55 8B EC 83 E4 F8", (m,c) => BuildPaidUpgrade(m,c,UpgradeCurrency.Credits)),
         new InjectionHack("Offline Standard Upgrade Gems", 0x625AA0, "55 8B EC 83 E4 F8", (m,c) => BuildPaidUpgrade(m,c,UpgradeCurrency.Gems)),
         new InjectionHack(OfflineProUpgrade, 0xE683B0, "55 8B EC 83 E4 F8", (m,c) => BuildPaidUpgrade(m,c,UpgradeCurrency.Fusion)),
@@ -784,6 +807,7 @@ internal static class InjectionCatalog
     {
         const int creditSetterOffset = 0x600;
         var code = new List<byte>();
+        NativeLobbyHook.EmitTick(code, module, cave);
         string state = I32((int)(cave + WalletCommandOffset));
         string currency = I32((int)(cave + WalletCommandOffset + 4));
         string amount = I32((int)(cave + WalletCommandOffset + 8));
@@ -1020,7 +1044,7 @@ internal static class InjectionCatalog
         var installed = new byte[WalletCommandOffset + 24];
         code.CopyTo(installed);
         setCredits.CopyTo(installed, creditSetterOffset);
-        return installed;
+        return NativeLobbyHook.InstallImage(installed, cave);
     }
 
     private static byte[] BuildProCarOverride(long module, long cave)
@@ -1400,11 +1424,7 @@ internal static class NativeInjectionEngine
         var games = Process.GetProcessesByName("Asphalt8");
         if (games.Length != 1) { error = "Open exactly one Asphalt 8 instance."; return false; }
         int pid = games[0].Id;
-        if (walletProcessId != pid)
-        {
-            if (!Toggle(InjectionCatalog.Find("Wallet Editor"), true, out error)) return false;
-            walletProcessId = pid;
-        }
+        if (!EnsureWalletEditor(out error)) return false;
         IntPtr process = OpenProcess(ProcessVmOperation | ProcessVmRead | ProcessVmWrite, false, pid);
         if (process == IntPtr.Zero) { error = "Cannot access the game's balance."; return false; }
         try
@@ -1428,6 +1448,41 @@ internal static class NativeInjectionEngine
             return true;
         }
         finally { CloseHandle(process); }
+    }
+
+    internal static bool EnsureWalletEditor(out string error)
+    {
+        error="";
+        var games=Process.GetProcessesByName("Asphalt8");
+        if(games.Length!=1){error="Open exactly one Asphalt 8 instance.";return false;}
+        int pid=games[0].Id;
+        if(walletProcessId==pid && allocationProcessId==pid && Allocations.ContainsKey("Wallet Editor"))return true;
+        if(!Toggle(InjectionCatalog.Find("Wallet Editor"),true,out error))return false;
+        walletProcessId=pid;return true;
+    }
+
+    internal static bool ReadNativeLobbyState(out int pid,out byte[] state)
+    {
+        pid=walletProcessId;state=null;IntPtr cave;
+        if(pid==0 || allocationProcessId!=pid || !Allocations.TryGetValue("Wallet Editor",out cave))return false;
+        IntPtr process=OpenProcess(ProcessVmRead,false,pid);if(process==IntPtr.Zero)return false;
+        try
+        {
+            var data=new byte[3784];IntPtr count;
+            if(!ReadProcessMemory(process,IntPtr.Add(cave,NativeLobbyHook.StateOffset),data,data.Length,out count) || count.ToInt32()!=data.Length)return false;
+            if(BitConverter.ToUInt32(data,0)!=0x3849554e || BitConverter.ToUInt32(data,4)!=1 || BitConverter.ToInt32(data,8)!=data.Length)return false;
+            state=data;return true;
+        }
+        finally{CloseHandle(process);}
+    }
+
+    internal static bool WriteNativeLobbyState(int pid,int offset,byte[] data)
+    {
+        IntPtr cave;
+        if(data==null || offset<16 || offset>3784-data.Length || pid!=walletProcessId || allocationProcessId!=pid || !Allocations.TryGetValue("Wallet Editor",out cave))return false;
+        IntPtr process=OpenProcess(ProcessVmWrite|ProcessVmOperation,false,pid);if(process==IntPtr.Zero)return false;
+        try{IntPtr count;return WriteProcessMemory(process,IntPtr.Add(cave,NativeLobbyHook.StateOffset+offset),data,data.Length,out count) && count.ToInt32()==data.Length;}
+        finally{CloseHandle(process);}
     }
 
     internal static int WalletCommandState()

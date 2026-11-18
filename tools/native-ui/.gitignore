@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+*.bgin
+native-ui-build.json

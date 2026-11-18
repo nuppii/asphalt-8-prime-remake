@@ -32,6 +32,16 @@ Disabling clears the relevant mask bit. A group reset clears its mask and writes
 
 Wallet, purchase, receipt, sale and driver-name operations are queued for the game's own processing path. The overlay polls for confirmation instead of treating submission as success. The career refresh hook rebuilds the selector on the game's UI thread when the override changes.
 
+## Native multiplayer controls
+
+`NativeMultiplayer.cs` reuses the original Local Wi-Fi state. `NativeLobbyUi.c` creates buttons and keyboard widgets through the game's GIN factories and connects their original click signals. It runs on the game UI thread through the existing wallet dispatcher; a second competing hook is not installed at that update entry. `NativeLobbyHook.cs` embeds and relocates the freestanding x86 image, preserving the calling frame and floating-point state.
+
+`NativeLobbyUi.h` defines the 3,784-byte, versioned shared-memory contract. `NativeLobbyBridge.cs` reads explicit user requests and performs HTTP work in the background. Counts are published after list strings; stale process/profile completions are discarded. Requested settings live in `native-profile.json`. Social credentials are separate, protected with Windows DPAPI for the current user and directory URL. Password entry remains session-only. Clipboard access requires an explicit native button action.
+
+`NativeLanBridge.c` opens the original LAN browser and matches an exact room name against native discovery results. A unique result uses the original Join callback and its original eligibility checks. Duplicate names leave selection to the browser. Shared pointers are retained for the callback, and discovered room pointers do not survive a polling call. A dispatched callback does not establish a connection.
+
+`tools/native-ui` generates two local BGIN resources from installed assets; the installer creates and copies them. The repository contains the parser and builder, not complete game resources. The optional directory/social service and experimental TCP room-control service remain separate from native race synchronization. See [multiplayer status](MULTIPLAYER.md) for the unsupported boundaries.
+
 ## Startup patch
 
 `scripts/patch_offline.py` requires the supported original SHA-256 and expected byte signatures. It replaces the remote compliance-variable lookup block and redirects the unavailable startup age-gating flow to the normal initialization path. It updates a dedicated copy's package identity and retains original package metadata in `_offline_patch_backup` for recovery.

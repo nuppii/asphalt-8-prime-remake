@@ -19,14 +19,23 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Native mutator compilation failed.' }
     & (Join-Path $MsvcBin 'link.exe') /NOLOGO /NODEFAULTLIB /MACHINE:X86 /SUBSYSTEM:CONSOLE /ENTRY:ApplyMutators /FIXED:NO "/OUT:$mutatorImage" $mutatorObject
     if ($LASTEXITCODE -ne 0) { throw 'Native mutator linking failed.' }
-    $sources = @('Trainer.cs', 'CheatTableForm.cs', 'GridSpawnHook.cs', 'MutatorEngine.cs', 'NativeMultiplayer.cs') | ForEach-Object { Join-Path $PSScriptRoot $_ }
-    $sources += @('RoomProtocol.cs','RoomServer.cs','RoomClient.cs','LanRoomDiscovery.cs','PublicRoomDirectory.cs') | ForEach-Object { Join-Path (Join-Path $PSScriptRoot '..\multiplayer') $_ }
+    $lobbyObject = Join-Path $stage 'NativeLobbyUi.obj'
+    $lobbyImage = Join-Path $stage 'NativeLobbyUi.bin'
+    & (Join-Path $MsvcBin 'cl.exe') /nologo /c /O2 /GS- /arch:IA32 "/Fo$lobbyObject" (Join-Path $PSScriptRoot 'NativeLobbyUi.c')
+    if ($LASTEXITCODE -ne 0) { throw 'Native lobby compilation failed.' }
+    $lanObject = Join-Path $stage 'NativeLanBridge.obj'
+    & (Join-Path $MsvcBin 'cl.exe') /nologo /c /O2 /GS- /arch:IA32 "/Fo$lanObject" (Join-Path $PSScriptRoot 'NativeLanBridge.c')
+    if ($LASTEXITCODE -ne 0) { throw 'Native LAN adapter compilation failed.' }
+    & (Join-Path $MsvcBin 'link.exe') /NOLOGO /NODEFAULTLIB /MACHINE:X86 /SUBSYSTEM:CONSOLE /ENTRY:TickUi /FIXED:NO "/OUT:$lobbyImage" $lobbyObject $lanObject
+    if ($LASTEXITCODE -ne 0) { throw 'Native lobby linking failed.' }
+    $sources = @('Trainer.cs', 'CheatTableForm.cs', 'GridSpawnHook.cs', 'MutatorEngine.cs', 'NativeMultiplayer.cs', 'NativeLobbyHook.cs', 'NativeLobbyBridge.cs') | ForEach-Object { Join-Path $PSScriptRoot $_ }
+    $sources += @('RoomProtocol.cs','RoomServer.cs','RoomClient.cs','LanRoomDiscovery.cs','PublicRoomDirectory.cs','RoomInvites.cs','SocialClient.cs') | ForEach-Object { Join-Path (Join-Path $PSScriptRoot '..\multiplayer') $_ }
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
-    & $compiler /nologo /target:winexe /platform:x86 /optimize+ "/out:$Output" "/resource:$image,GridSpawn.x86" "/resource:$mutatorImage,MutatorPhysics.x86" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Runtime.Serialization.dll $sources
+    & $compiler /nologo /target:winexe /platform:x86 /optimize+ "/out:$Output" "/resource:$image,GridSpawn.x86" "/resource:$mutatorImage,MutatorPhysics.x86" "/resource:$lobbyImage,NativeLobbyUi.x86" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Security.dll /reference:System.Runtime.Serialization.dll $sources
     if ($LASTEXITCODE -ne 0) { throw 'Trainer compilation failed.' }
 }
 finally {
-    foreach ($name in 'GridSpawn.obj', 'GridSpawn.bin', 'MutatorPhysics.obj', 'MutatorPhysics.bin') {
+    foreach ($name in 'GridSpawn.obj', 'GridSpawn.bin', 'MutatorPhysics.obj', 'MutatorPhysics.bin', 'NativeLobbyUi.obj', 'NativeLanBridge.obj', 'NativeLobbyUi.bin', 'NativeLobbyUi.lib', 'NativeLobbyUi.exp') {
         $file = Join-Path $stage $name
         if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
     }

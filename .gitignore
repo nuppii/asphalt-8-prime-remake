@@ -18,3 +18,7 @@ Assets/
 build/
 .env
 .env.*
+*.private.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

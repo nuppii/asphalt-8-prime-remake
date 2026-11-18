@@ -10,8 +10,22 @@ import secrets
 import ssl
 import threading
 import time
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
+
+
+def room_name(value):
+    if not isinstance(value, str):
+        raise ValueError("Room name must contain 1-64 printable characters")
+    value = unicodedata.normalize("NFC", value.strip())
+    if not value or len(value) > 64 or any(unicodedata.category(c).startswith("C") for c in value):
+        raise ValueError("Room name must contain 1-64 printable characters")
+    return value
+
+
+def valid_room_id(value):
+    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{8,64}", value) is not None
 
 
 class Directory:
@@ -31,14 +45,39 @@ class Directory:
             self.prune()
             return [dict(entry["room"]) for _, entry in sorted(self.rooms.items())]
 
+    def search(self, name=None, match="exact", limit=256, offset=0):
+        if match not in ("exact", "prefix"):
+            raise ValueError("Search match must be exact or prefix")
+        if type(limit) is not int or not 1 <= limit <= 256 or type(offset) is not int or not 0 <= offset <= 10000:
+            raise ValueError("Search limit must be 1-256 and offset 0-10000")
+        query = room_name(name).casefold() if name is not None else None
+        with self.lock:
+            self.prune()
+            rooms = []
+            for key, entry in self.rooms.items():
+                room = entry["room"]
+                folded = room["name"].casefold()
+                if query is None or (folded == query if match == "exact" else folded.startswith(query)):
+                    rooms.append(dict(room))
+            rooms.sort(key=lambda r: (r["name"].casefold(), r["roomId"]))
+            end = offset + limit
+            return {"rooms": rooms[offset:end], "totalMatches": len(rooms),
+                    "nextOffset": end if end < len(rooms) else None}
+
+    def resolve(self, room_id):
+        if not valid_room_id(room_id):
+            raise ValueError("Invalid room ID")
+        with self.lock:
+            self.prune()
+            entry = self.rooms.get(room_id)
+            return dict(entry["room"]) if entry is not None else None
+
     def announce(self, room_id, payload, address, token):
-        if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", room_id):
+        if not valid_room_id(room_id):
             raise ValueError("Invalid room ID")
         if not isinstance(payload, dict) or payload.get("private", False) is not False:
             raise ValueError("Private rooms must not be published")
-        name = payload.get("name")
-        if not isinstance(name, str) or not name.strip() or len(name) > 64 or any(ord(c) < 32 for c in name):
-            raise ValueError("Room name must contain 1-64 printable characters")
+        name = room_name(payload.get("name"))
         port, players, capacity = (payload.get(k) for k in ("port", "players", "capacity"))
         if any(type(v) is not int for v in (port, players, capacity)):
             raise ValueError("Port, players and capacity must be integers")
@@ -124,11 +163,39 @@ class Handler(BaseHTTPRequestHandler):
         return path[len(prefix):] if path.startswith(prefix) else None
 
     def do_GET(self):
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
         if path == "/health":
             return self.reply(200, {"status": "ok", "protocol": 1})
         if path == "/v1/rooms":
-            return self.reply(200, {"rooms": self.server.directory.listings()})
+            try:
+                if len(parsed.query) > 2048:
+                    raise ValueError("Search query is too long")
+                query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=8)
+                if set(query) - {"name", "match", "limit", "offset"} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("Invalid or duplicate search parameter")
+                result = self.server.directory.search(
+                    query.get("name", [None])[0], query.get("match", ["exact"])[0],
+                    int(query.get("limit", ["256"])[0]), int(query.get("offset", ["0"])[0]))
+                return self.reply(200, result)
+            except ValueError as exc:
+                return self.reply(400, {"error": str(exc)})
+        room_id = self.route_room()
+        if room_id is not None:
+            try:
+                if len(parsed.query) > 2048:
+                    raise ValueError("Room lookup query is too long")
+                query = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=2)
+                if set(query) - {"name"} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("Invalid room lookup parameter")
+                expected_name = room_name(query["name"][0]).casefold() if "name" in query else None
+                room = self.server.directory.resolve(room_id)
+                if room is not None and expected_name is not None and room["name"].casefold() != expected_name:
+                    room = None
+                return self.reply(200 if room is not None else 404,
+                                  {"room": room} if room is not None else {"error": "Room is not listed or its lease expired"})
+            except ValueError as exc:
+                return self.reply(400, {"error": str(exc)})
         self.reply(404, {"error": "Not found"})
 
     def do_POST(self):

@@ -15,6 +15,17 @@ $runtime = Get-AppxPackage -Name Microsoft.VCLibs.120.00 | Where-Object { $_.Arc
 if (!$runtime) { throw 'Install the original game dependency Microsoft.VCLibs.120.00 (x86) first.' }
 & python (Join-Path $PSScriptRoot 'patch_offline.py') --game-dir $game
 if ($LASTEXITCODE -ne 0) { throw 'Offline patch failed. No package registration was attempted.' }
+$gui = Join-Path $game 'Data\gui'
+$nativeStage = Join-Path $game '_offline_patch_backup\native-ui-generated'
+$nativeBuilder = Join-Path $repo 'tools\native-ui\build_native_ui.py'
+foreach ($kind in 'panel', 'keyboard') {
+    $destination = Join-Path $nativeStage $kind
+    $mode = if ($kind -eq 'panel') { '--panel-only' } else { '--keyboard-only' }
+    & python $nativeBuilder --gui $gui --output $destination $mode
+    if ($LASTEXITCODE -ne 0) { throw "Native $kind resource generation failed." }
+    $name = if ($kind -eq 'panel') { 'offline_lobby_panel.bgin' } else { 'offline_lobby_ui.bgin' }
+    Copy-Item -LiteralPath (Join-Path $destination $name) -Destination (Join-Path $gui $name) -Force
+}
 & (Join-Path $repo 'trainer/Build-Trainer.ps1') -MsvcBin $MsvcBin -Output $launcher
 Add-AppxPackage -Register (Join-Path $game 'AppxManifest.xml') -DisableDevelopmentMode
 Write-Host "Installed. Launch: $launcher"

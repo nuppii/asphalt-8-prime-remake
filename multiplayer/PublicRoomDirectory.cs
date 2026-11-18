@@ -5,6 +5,8 @@ using System.Net;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Threading;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace OfflineLab.Multiplayer
 {
@@ -18,15 +20,28 @@ namespace OfflineLab.Multiplayer
         [DataMember(Name="players")] public int Players { get; set; }
         [DataMember(Name="capacity")] public int Capacity { get; set; }
         [DataMember(Name="protocol")] public int Protocol { get; set; }
+        [DataMember(Name="private")] public bool IsPrivate { get; set; }
         internal LanRoomListing ToRoom()
         {
             return new LanRoomListing { RoomId=RoomId,Name=Name,Address=Address,Port=Port,
-                Players=Players,Capacity=Capacity,IsPrivate=false };
+                Players=Players,Capacity=Capacity,IsPrivate=IsPrivate };
         }
     }
 
     [DataContract] internal sealed class PublicList
-    { [DataMember(Name="rooms")] public List<PublicListing> Rooms { get; set; } }
+    {
+        [DataMember(Name="rooms")] public List<PublicListing> Rooms { get; set; }
+        [DataMember(Name="totalMatches")] public int TotalMatches { get; set; }
+        [DataMember(Name="nextOffset")] public int? NextOffset { get; set; }
+    }
+    [DataContract] internal sealed class PublicResolved
+    { [DataMember(Name="room")] public PublicListing Room { get; set; } }
+    public sealed class RoomSearchPage
+    {
+        public List<LanRoomListing> Rooms { get; internal set; }
+        public int TotalMatches { get; internal set; }
+        public int? NextOffset { get; internal set; }
+    }
     [DataContract] internal sealed class LeaseReply
     {
         [DataMember(Name="leaseToken")] public string Token { get; set; }
@@ -61,15 +76,86 @@ namespace OfflineLab.Multiplayer
         {
             var response=(PublicList)Request(directory,"v1/rooms","GET",null,null,typeof(PublicList));
             var result=new List<LanRoomListing>();
+            if(response==null)throw new InvalidDataException("The directory returned an empty listing response.");
             if(response.Rooms==null)return result;
             foreach(PublicListing entry in response.Rooms)
             {
-                if(entry==null || entry.Protocol!=1 || string.IsNullOrWhiteSpace(entry.Address) || entry.Address.Length>255)continue;
+                if(entry==null || entry.IsPrivate || entry.Protocol!=1 || string.IsNullOrWhiteSpace(entry.Address) || entry.Address.Length>255)continue;
                 LanRoomListing room=entry.ToRoom();
                 if(LanRoomDiscovery.Valid(room))result.Add(room);
                 if(result.Count>=256)break;
             }
             return result;
+        }
+
+        public static List<LanRoomListing> Search(Uri directory,string name,int limit=50,int offset=0,bool prefix=false)
+        { return SearchPage(directory,name,limit,offset,prefix).Rooms; }
+
+        public static RoomSearchPage SearchPage(Uri directory,string name,int limit=50,int offset=0,bool prefix=false)
+        {
+            name=ValidateName(name);
+            if(limit<1||limit>256||offset<0||offset>10000)throw new ArgumentOutOfRangeException("limit","Search limit must be 1-256 and offset 0-10000.");
+            string path="v1/rooms?name="+Uri.EscapeDataString(name)+"&match="+(prefix?"prefix":"exact")+
+                "&limit="+limit.ToString(System.Globalization.CultureInfo.InvariantCulture)+"&offset="+offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var response=(PublicList)Request(directory,path,"GET",null,null,typeof(PublicList));
+            if(response==null)throw new InvalidDataException("The directory returned an empty search response.");
+            var rooms=new List<LanRoomListing>();
+            if(response.Rooms!=null)foreach(PublicListing entry in response.Rooms)
+            {
+                if(entry==null||entry.IsPrivate||entry.Protocol!=1||string.IsNullOrWhiteSpace(entry.Address)||entry.Address.Length>255)continue;
+                LanRoomListing room=entry.ToRoom();
+                if(LanRoomDiscovery.Valid(room))rooms.Add(room);
+                if(rooms.Count>=limit)break;
+            }
+            if(response.TotalMatches<0||response.TotalMatches>10000||
+                (response.NextOffset.HasValue&&(response.NextOffset.Value<=offset||response.NextOffset.Value>10000)))
+                throw new InvalidDataException("The directory supplied invalid search pagination.");
+            return new RoomSearchPage{Rooms=rooms,TotalMatches=response.TotalMatches,NextOffset=response.NextOffset};
+        }
+
+        public static LanRoomListing Resolve(Uri directory,string roomId)
+        {return Resolve(directory,roomId,null);}
+
+        public static LanRoomListing Resolve(Uri directory,string roomId,string expectedName)
+        {
+            ValidateRoomId(roomId);
+            string path="v1/rooms/"+Uri.EscapeDataString(roomId);
+            if(expectedName!=null)path+="?name="+Uri.EscapeDataString(ValidateName(expectedName));
+            PublicResolved response;
+            try{response=(PublicResolved)Request(directory,path,"GET",null,null,typeof(PublicResolved));}
+            catch(WebException error)
+            {
+                var http=error.Response as HttpWebResponse;
+                bool absent=http!=null&&http.StatusCode==HttpStatusCode.NotFound;
+                if(http!=null)http.Close();
+                if(absent)throw new InvalidOperationException("The room is not listed or its lease expired.");
+                throw;
+            }
+            PublicListing entry=response==null?null:response.Room;
+            if(entry==null||entry.IsPrivate||entry.Protocol!=1||entry.RoomId!=roomId||
+                string.IsNullOrWhiteSpace(entry.Address)||entry.Address.Length>255||!LanRoomDiscovery.Valid(entry.ToRoom()))
+                throw new InvalidDataException("The directory returned an invalid public room reference.");
+            return entry.ToRoom();
+        }
+
+        internal static void ValidateRoomId(string roomId)
+        {if(roomId==null||roomId.Length<8||roomId.Length>64||!Regex.IsMatch(roomId,"^[A-Za-z0-9_-]+$"))throw new ArgumentException("Invalid room ID.");}
+        internal static string ValidateName(string name)
+        {
+            string value=(name??"").Trim().Normalize(NormalizationForm.FormC);
+            int scalars=0;
+            for(int i=0;i<value.Length;i++)
+            {
+                var category=System.Globalization.CharUnicodeInfo.GetUnicodeCategory(value,i);
+                if(category==System.Globalization.UnicodeCategory.Control||category==System.Globalization.UnicodeCategory.Format||
+                    category==System.Globalization.UnicodeCategory.Surrogate||category==System.Globalization.UnicodeCategory.PrivateUse||
+                    category==System.Globalization.UnicodeCategory.OtherNotAssigned)
+                    throw new ArgumentException("Room name contains non-printable characters.");
+                if(char.IsHighSurrogate(value[i]))i++;
+                scalars++;
+            }
+            if(scalars<1||scalars>64)throw new ArgumentException("Room name must contain 1-64 printable characters.");
+            return value;
         }
 
         internal static object Request(Uri directory,string path,string method,object body,string token,Type responseType)

@@ -15,6 +15,31 @@
 
 These observations are local evidence, not exhaustive coverage. Some checks preceded the English-only string changes. Translating the interface did not change native patch offsets or emitted hook code.
 
+## Native multiplayer and social checks
+
+A clean game/trainer build was exercised without Frida attached. All social identities and the HTTP directory used in these checks were owned local test fixtures.
+
+| Check | Observation |
+| --- | --- |
+| Native pages | Added main, Room Options, Find by Name and Friends pages opened |
+| Native keyboard | Lowercase entry produced literal `a`; Cancel restored the previous value |
+| Incoming friend request | **Accept Selected** created a real HTTP friendship; service readback showed one friendship and zero pending requests |
+| Friend presence | The friend row changed from Online to Offline after its presence TTL expired |
+| Invitation inbox | An invitation sent by the owned local peer appeared in the native list |
+| Invitation acceptance | Resolved the reference and explicitly reported that the native race adapter is pending and the player was not joined |
+| Invitation dismissal | Removed the selected invitation from the real inbox |
+| Name search | Native query `A` reached the HTTP directory and displayed zero matches |
+| LAN join helper | **JOIN LAN BY NAME** opened the original `SelectRoom` browser; no match led to the bounded 900-tick timeout, and Back returned without a crash |
+| Saved room name | Earlier instrumentation observed the actual `LocalLobbyHost` argument `Asphalt 8 room` with capacity eight |
+
+These observations establish UI callbacks and local social-service interaction. The LAN helper is linked and invoked before the local filter, but no external room was available on the single test PC. Successful native joining, synchronized human racing, Internet reachability, 60-human grids and native race-host migration remain unverified. Default / 1–60 settings remain requested values; the native `ClassicLaps` hook has not been verified in a game race. The final rebuilt launcher kept asynchronous friend rows above the action buttons. Grid and laps changed from Default to 1, then Reset restored both to Default; saved-profile readback matched both states.
+
+The latest recorded automated checks passed 19 directory/social Python tests, six native-resource tests, the room subprocess selftest, two successive lobby migrations and the invitation selftest. The managed native-bridge fixture additionally exercises real local HTTP operations with simulated shared memory, including DPAPI credential persistence, process changes and disposal. Lobby migration tests do not transfer the native race simulation.
+
+The installed build also passed an isolated x86 fixture with 1,281 assertions, including 585 image relocations, native UI early-return guards, and execution of generated lap code for Default, 1, 60, invalid ranges and private/Classic guards. The fixture owns all executed memory and does not open the game. Final native action buttons no longer retain automatic selection; policy highlights follow requested ON/OFF values. The temporary local service was disconnected and stopped after testing.
+
+See [multiplayer status and test commands](MULTIPLAYER.md) for the implementation boundaries and reproducible checks.
+
 ## In-Game Mutators
 
 The compiled native entry was exercised in a fixture for both player and bot targets. For the six non-airborne controls, the fixture checked 0×, 0.01×, 1×, 5× and 100× settings, plus disabled pass-through. These checks cover the calculation paths, including their numeric bounds; they do not substitute for observing every effect across game events.

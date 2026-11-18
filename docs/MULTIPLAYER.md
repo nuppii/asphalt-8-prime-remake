@@ -2,7 +2,13 @@
 
 The Multiplayer tile now opens Asphalt 8's original **in-game** Create Room / Join Room menu. The separate companion window has been removed from the launcher and source. Native menus, typography, garage, circuit selection and illustrations are rendered by the game itself.
 
-![Native in-game multiplayer menu](images/multiplayer-native-menu.png)
+Additional native pages provide **Room Options**, **Find by Name**, **Friends**, **Connection** and keyboard entry. Room names and requested policies persist locally. Grid and laps use **Default** or **1–60**; Default requests the original event value. A saved setting or visible toggle does not establish native race enforcement.
+
+![Native in-game multiplayer controls](images/multiplayer-native-controls.jpg)
+
+![Native room options; enforcement limitations are shown in the status line](images/multiplayer-native-options.jpg)
+
+![Real local social test friend displayed in the native interface](images/multiplayer-native-friends.jpg)
 
 ![Original in-game circuit selection and artwork](images/multiplayer-native-tracks.png)
 
@@ -13,6 +19,12 @@ The Multiplayer tile now opens Asphalt 8's original **in-game** Create Room / Jo
 - Display the original circuit illustrations and native player controls.
 - Create a local room: the game process binds UDP discovery port 6529 and additional ephemeral UDP ports.
 - Fill and remove AI entries in the waiting room.
+- Pass the saved room name into the native `LocalLobbyHost` call; instrumentation observed `Asphalt 8 room` with native capacity eight.
+- Open the added main, Room Options, Find by Name and Friends pages in a clean build without Frida attached. The native lowercase keyboard entered literal `a`; Cancel restored the previous value.
+- Accept a real incoming request from an owned local test identity: the service recorded one friendship and zero pending requests. The friend row showed Online, then Offline after presence expiry.
+- Display a real invitation from that test identity, resolve it with the truthful not-joined status, and dismiss it from the inbox.
+- Submit name query `A` to the local HTTP directory and display zero matching rooms.
+- Use **JOIN LAN BY NAME** to enter the original `SelectRoom` browser. With no matching room available, the helper reached its bounded 900-tick timeout and Back returned without a crash.
 
 This is a native LAN foundation. Joining from another physical PC, synchronized human driving, automatic native race-host migration, Internet reachability and 60-human grids have not been verified.
 
@@ -25,19 +37,32 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 | Original in-game menus and map artwork | Installed and manually exercised |
 | Native room creation and UDP binding | Observed on the host PC |
 | Joining and racing across different PCs | Not verified |
-| Public Internet directory in native browser | Standalone service tested; adapter pending |
-| Password entry and custom room policies in native UI | Pending |
-| Default / 1-60 grid and lap controls in native UI | Pending; former companion controls removed |
+| Directory search by room name | Backend exact/prefix matching and duplicate choices tested; native query `A` produced the service's zero-match result |
+| Native LAN join by name | Original browser entry, bounded timeout and Back observed; successful room joining not verified |
+| Connection URL and keyboard entry | Native controls implemented; saved URL restores and can be cleared |
+| Password entry and custom room policies | Native controls implemented; private native authentication and policy enforcement pending |
+| Default / 1–60 grid and lap controls | Requested settings persist; lap code passes an isolated x86 fixture; native race behavior remains unverified |
 | 60 human racers | Native server start rejects counts above 12; layout has eight visible entries |
 | Automatic native race-host migration | Not implemented |
 | Abrupt host recovery | Not implemented |
-| Persistent friends and clans | Not implemented |
+| Persistent friends, presence and invitation delivery | Native request acceptance, Online/Offline presence, invitation display, resolve-only acceptance and dismissal observed against the local service |
+| Clans | Not implemented; room group tags are cosmetic |
 
 The solo grid patch does not establish 60-player network support. Native count, memory layout and serialization changes require separate work.
 
+## Native social bridge
+
+Connection configures an optional directory URL. The managed bridge registers an opaque identity, saves separate DPAPI-protected credentials for the current Windows user, and performs registration, presence heartbeats and social requests in the background. A nickname remains a display name; it does not replace the stable player ID.
+
+Friends are added by player ID and require explicit acceptance. Separate native pages expose friends, incoming requests and invitations. The bridge supports request acceptance/rejection, inbox refresh and dismissal. Invitation acceptance currently resolves the room reference and explicitly reports **native race adapter pending; not joined**. Public native invitation delivery still needs room-lease ownership integration; the tested private-reference path requires an accepted friend and an explicitly supplied valid reference. No room or player is fabricated to populate the UI.
+
+The bridge fixture tests the actual managed implementation against a real loopback social service with simulated game shared memory. It covers protected identity persistence, stale-process handling and disposal. A separate clean-build game session without Frida verified the native friend acceptance, presence and invitation actions listed above. These tests used owned local identities, with no external contacts.
+
+The native LAN helper is linked and called before the local-room filter. Its browser entry and no-match timeout path were exercised on one PC. No external room was available, so successful joining remains unverified. The final rebuild also kept asynchronous friend rows in their intended order and reset requested grid/lap values from 1 back to Default, with matching saved-profile readback.
+
 ## Experimental room-control service
 
-The C# room service and Python public directory remain available for development. They are **not connected to the native menus or race simulation**. Their tests are socket/protocol tests, not end-to-end game tests.
+The C# room-control service remains available for development and is **not the native game's race server**. Python `social.py` exposes both the public room directory and persistent social APIs; `server.py` exposes directory routes alone. Directory search and social calls have a managed native-menu adapter, with the verification limits above. Their tests are socket/HTTP tests, not synchronized game-race tests.
 
 Implemented: actual TCP servers created on hosts, password challenge authentication, LAN discovery, direct connections, public-directory publication, names/status/group tags, RTT measurements, room rules, Default/1-60 settings, planned bot counts, map votes, kick, moderator promotion and graceful lobby handover. A group tag is cosmetic; it is not a persistent clan.
 
@@ -50,13 +75,19 @@ Known handover gaps: nominee reachability/NAT, per-client reconnect acknowledgem
 ## Build and validation
 
 ```powershell
-.\multiplayer\Build-Rooms.ps1
+.\multiplayer\Build-NativeBridgeCheck.ps1
+.\trainer\Test-NativePayload.ps1 -TrainerPath '.\build\trainer-native-lobby-controls.exe'
 .\build\multiplayer\RoomCli.exe selftest
 .\build\multiplayer\RoomCli.exe migrationtest
+.\build\multiplayer\InviteCheck.exe selftest
 python -m unittest discover -s directory -p 'test_*.py' -v
 ```
 
-Tests cover authentication, capacity, authorization, profiles, RTT, voting, promotion, kick/leave, defaults, bot-count calculations, two lobby transfers, directory leases, public/private LAN discovery and English network errors. The discovery integration requires Windows, the build above and an isolated LAN with no other room advertisers.
+The build compiles the library and test executables, including the exact managed native bridge with a shared-memory test fixture. Tests cover authentication, capacity, authorization, profiles, RTT, voting, promotion, kick/leave, defaults, bot-count calculations, two lobby transfers, directory leases, name-search ambiguity, public/private LAN discovery and English network errors. The Python suite starts loopback fixtures and invokes `InviteCheck.exe`, `SocialCheck.exe` and `NativeBridgeCheck.exe` for real HTTP integration. Social checks cover mutual acceptance, request rejection, inbox isolation, invitation delivery, expiry, persistence and protected client credentials. The discovery integration requires Windows and an isolated LAN with no other room advertisers. These tests do not message external contacts or deploy a service.
+
+The latest recorded checks passed 19 directory/social Python tests and six native-resource tests, plus the room selftest, lobby migration test and invitation selftest. Passing these checks does not establish a synchronized native race.
+
+The isolated x86 payload fixture passed 1,281 assertions against the installed build, including 585 relocations, native UI early-return guards, and actual execution of generated lap code for Default, 1, 60, invalid ranges and private/Classic guards. It runs only in its own allocated memory and never opens the game process. The fixture does not validate event layout, race synchronization or peers.
 
 ## Native implementation evidence
 
@@ -65,6 +96,8 @@ Supported original executable SHA-256: `6a5d3933f92809297631f1299c9906ec40fbb9d5
 The Multiplayer callback is RVA `0x84C7F0`; ranked tile getter is RVA `0x42F490`. Forced status 4 enables the native tile. The replacement callback preserves the existing GS_Play navigation frame, native ownership and cleanup, changes the state enum to `0x25`, and calls Local Wi-Fi factory VA `0xCDB7D0`. Image pointers and external relative calls are relocated into the injected callback.
 
 Runtime instrumentation observed the factory, layout, LocalLobby initialization and create call. The host process bound UDP 6529 and four ephemeral sockets. A temporary launch experiment observed native server start and successful Winsock binds, followed by the unsupported single-human condition described above. The instrumentation was detached and its temporary launch change restored. The installed launcher is verified separately after restart.
+
+Room-name instrumentation additionally observed the actual native host argument `Asphalt 8 room` and capacity eight. The requested-laps hook targets native `ClassicLaps`, but has not yet been verified at runtime. Neither observation establishes custom network capacity or synchronized race behavior.
 
 Native NetworkServer::Start VA `0xD6D200` rejects more than 12 participants at `0xD6D2D1-0xD6D2D4`; another server-owned object has an inline 16-element array. Raising the comparison alone is unsafe.
 

@@ -37,6 +37,7 @@ internal sealed class TrainerContext : ApplicationContext
     private const string AppId = "YoanRochat.Asphalt8Airborne480Offline_0pp20fcewvvtj!App";
     private readonly TrainerForm trainer;
     private readonly NotifyIcon tray;
+    private readonly NativeLobbyBridge nativeLobby;
 
     public TrainerContext(bool showMenu)
     {
@@ -60,6 +61,7 @@ internal sealed class TrainerContext : ApplicationContext
             })
         };
         tray.DoubleClick += (_, __) => trainer.ToggleVisible();
+        nativeLobby = new NativeLobbyBridge();
         LaunchGame();
     }
 
@@ -75,6 +77,7 @@ internal sealed class TrainerContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        nativeLobby.Dispose();
         tray.Visible = false;
         tray.Dispose();
         trainer.Dispose();
@@ -1958,6 +1961,12 @@ internal sealed class TrainerForm : Form
             Log("Multiplayer entry: " + multiplayerError);
         else if (!NativeInjectionEngine.Toggle(InjectionCatalog.MultiplayerTile,true,out multiplayerError))
             Log("Multiplayer tile: " + multiplayerError);
+        if (!NativeInjectionEngine.EnsureWalletEditor(out multiplayerError))
+            Log("Native lobby dispatcher: " + multiplayerError);
+        else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeRoomName,true,out multiplayerError))
+            Log("Native room name: " + multiplayerError);
+        else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeClassicLaps,true,out multiplayerError))
+            Log("Native Classic laps: " + multiplayerError);
         foreach (string name in new[] { "Offline Standard Upgrade Credits", "Offline Standard Upgrade Gems" })
         {
             string upgradeError;

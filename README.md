@@ -4,7 +4,7 @@
 
 Keep a local copy of the classic game playable, customize solo races, and manage the garage through a translucent English overlay. The community cheat tables call this release **4.8.0h**; compatibility is checked against the actual executable, rather than the display name alone.
 
-> This is an independent preservation and experimentation project. You must provide your own compatible game installation. Game executables, assets, accounts and save files are not distributed here. Online services are not recreated.
+> This is an independent preservation and experimentation project. You must provide your own compatible game installation. Game executables, assets, accounts and save files are not distributed here. The original online services are not restored.
 
 ## Screenshots
 
@@ -20,9 +20,11 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 
 ![In-Game Mutators for player and bots](docs/images/mutators.jpg)
 
+![Native in-game multiplayer controls](docs/images/multiplayer-native-controls.jpg)
+
 ## What it does
 
-**Native multiplayer development:** the Multiplayer tile now opens the original in-game Create/Join interface, map artwork and local waiting room. The separate companion window has been removed. Internet discovery, custom room policies and automatic race-host migration are not connected to that native flow yet. See [multiplayer implementation status](docs/MULTIPLAYER.md) for the tested scope and remaining work.
+**Native multiplayer development:** the Multiplayer tile opens the original in-game Create/Join interface. Added native pages cover Room Options, Find by Name, Friends, Connection and keyboard entry, with saved room names and Default / 1–60 grid and lap settings. These controls express requested settings; custom native race policies are not yet verified as enforced. The optional self-hosted directory supports room-name search, persistent friends, presence and invitation delivery. The managed bridge passes local HTTP tests, and native request acceptance, presence, inbox resolution and dismissal were exercised against an owned local service. Resolving an invitation does not join a native race. No public HTTPS service, cross-PC race, 60-human grid or native race-host migration is established. See [multiplayer implementation status](docs/MULTIPLAYER.md).
 
 - Launches the registered offline game from one executable.
 - Shows or hides a dark translucent mod menu with **Insert**, with categorized tools and starred favorites.
@@ -99,6 +101,8 @@ For an already registered offline copy, build just the trainer:
 ```
 
 Close the game and existing trainer before replacing the launcher. Restart the game after an update so the new trainer starts from original in-memory bytes.
+
+Use the full installer when upgrading to the native multiplayer controls: it also generates their two local UI resources. Building the trainer alone does not create those resources.
 
 ## Using the trainer
 
