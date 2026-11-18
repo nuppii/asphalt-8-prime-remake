@@ -37,14 +37,10 @@ internal sealed class TrainerContext : ApplicationContext
     private const string AppId = "YoanRochat.Asphalt8Airborne480Offline_0pp20fcewvvtj!App";
     private readonly TrainerForm trainer;
     private readonly NotifyIcon tray;
-    private readonly Timer multiplayerRequests;
-    private MultiplayerForm multiplayer;
-    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
 
     public TrainerContext(bool showMenu)
     {
         trainer = new TrainerForm();
-        trainer.MultiplayerRequested += OpenMultiplayer;
         // Force creation of the native window handle so RegisterHotKey runs,
         // then keep the overlay hidden until Insert is pressed.
         trainer.Show();
@@ -60,49 +56,11 @@ internal sealed class TrainerContext : ApplicationContext
             {
                 new MenuItem("Show / hide (Insert)", (_, __) => trainer.ToggleVisible()),
                 new MenuItem("Launch game", (_, __) => LaunchGame()),
-                new MenuItem("Self-hosted multiplayer", (_, __) => OpenMultiplayer()),
                 new MenuItem("Exit trainer", (_, __) => ExitThread())
             })
         };
         tray.DoubleClick += (_, __) => trainer.ToggleVisible();
-        multiplayerRequests = new Timer { Interval = 250 };
-        multiplayerRequests.Tick += (_, __) =>
-        {
-            if (NativeInjectionEngine.ConsumeMultiplayerRequest()) OpenMultiplayer();
-        };
-        multiplayerRequests.Start();
         LaunchGame();
-    }
-
-    private void OpenMultiplayer()
-    {
-        string log = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"_offline_patch_backup","tools","trainer.log");
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(log));
-            File.AppendAllText(log,DateTime.Now.ToString("O")+" Multiplayer requested"+Environment.NewLine);
-            if (multiplayer == null || multiplayer.IsDisposed) multiplayer = new MultiplayerForm();
-            multiplayer.ShowInTaskbar = true;
-            multiplayer.TopMost = true;
-            multiplayer.WindowState = FormWindowState.Normal;
-            multiplayer.Show();
-            // Windows can inherit a hidden startup presentation for a new
-            // companion form. Reset its managed/native visibility together.
-            if (!IsWindowVisible(multiplayer.Handle))
-            {
-                multiplayer.Hide();
-                multiplayer.Show();
-            }
-            multiplayer.Activate();
-            multiplayer.BringToFront();
-            File.AppendAllText(log,DateTime.Now.ToString("O")+" Multiplayer visible="+multiplayer.Visible+
-                " native="+IsWindowVisible(multiplayer.Handle)+Environment.NewLine);
-        }
-        catch(Exception ex)
-        {
-            try { File.AppendAllText(log,"Multiplayer interface error: "+ex+Environment.NewLine); } catch(IOException) { }
-            MessageBox.Show("Could not open the multiplayer interface. "+ex.Message,"Self-hosted multiplayer");
-        }
     }
 
     internal static void LaunchGame()
@@ -117,9 +75,6 @@ internal sealed class TrainerContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
-        multiplayerRequests.Stop();
-        multiplayerRequests.Dispose();
-        if (multiplayer != null) multiplayer.Dispose();
         tray.Visible = false;
         tray.Dispose();
         trainer.Dispose();
@@ -129,7 +84,6 @@ internal sealed class TrainerContext : ApplicationContext
 
 internal sealed class TrainerForm : Form
 {
-    internal event Action MultiplayerRequested;
     private const int HotkeyId = 0xA848;
     private const int WmHotkey = 0x0312;
     private const uint ModNoRepeat = 0x4000;
@@ -572,10 +526,6 @@ internal sealed class TrainerForm : Form
         else
         {
             options.Controls.Add(MakePendingOption("Patch engine 4.8.0.7", "ACTIVE"));
-            var multiplayerButton = new Button { Text = "OPEN SELF-HOSTED MULTIPLAYER", Width = 690,
-                Height = 52, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(0,122,160) };
-            multiplayerButton.Click += (_, __) => { Action handler = MultiplayerRequested; if (handler != null) handler(); };
-            options.Controls.Add(multiplayerButton);
         }
 
         status.Text = ToTitle(name) + "  •  integrated trainer tools";

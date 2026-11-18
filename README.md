@@ -22,7 +22,7 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 
 ## What it does
 
-**Multiplayer development preview:** this branch adds real self-hosted room control, voting and graceful lobby handover. Native racing is not connected yet. See [multiplayer implementation status](docs/MULTIPLAYER.md) for the tested scope and remaining work.
+**Native multiplayer development:** the Multiplayer tile now opens the original in-game Create/Join interface, map artwork and local waiting room. The separate companion window has been removed. Internet discovery, custom room policies and automatic race-host migration are not connected to that native flow yet. See [multiplayer implementation status](docs/MULTIPLAYER.md) for the tested scope and remaining work.
 
 - Launches the registered offline game from one executable.
 - Shows or hides a dark translucent mod menu with **Insert**, with categorized tools and starred favorites.

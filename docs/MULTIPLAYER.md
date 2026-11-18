@@ -1,73 +1,77 @@
-# Self-hosted multiplayer: implementation status
+# Native self-hosted multiplayer: implementation status
 
-This branch contains a working room-control service and a companion interface. **It does not yet provide synchronized playable multiplayer races.** The interface keeps Start Race disabled while `RaceBridgeReady` is false. A room participant count or bot-fill estimate is not evidence of spawned network cars.
+The Multiplayer tile now opens Asphalt 8's original **in-game** Create Room / Join Room menu. The separate companion window has been removed from the launcher and source. Native menus, typography, garage, circuit selection and illustrations are rendered by the game itself.
 
-![Companion multiplayer room-control preview](images/multiplayer-preview.png)
+![Native in-game multiplayer menu](images/multiplayer-native-menu.png)
 
-## Implemented control plane
+![Original in-game circuit selection and artwork](images/multiplayer-native-tracks.png)
 
-- A host automatically starts a TCP room server when creating a room.
-- Public LAN discovery and direct address/port connections.
-- Private-room password challenge authentication; passwords are not sent in clear text.
-- Nicknames, status text, connected member lists and measured host RTT.
-- Host settings for mutators, cheats, owned cars, class restrictions, bot fill, grid size and lap count.
-- **Default**, followed by **1–60**, for grid size and laps. Default currently uses eight room slots while native event-default resolution is pending.
-- Planned bot fill is `max(0, effective grid slots - human members)` when enabled. For example, 40 slots and 20 humans produces an estimate of 20 bots. No native bots are spawned by the room service yet.
-- One map vote per member, deterministic tie resolution, moderator promotion, kicking and leaving.
-- Clipboard invitations containing the current connection endpoint.
-- Graceful **lobby** host handover to the eligible peer with the lowest measured RTT to the departing host, with a deterministic ID tie-break. This measures a specific RTT; it is not a universal assessment of every peer's Internet connection.
-- Host handover preserves room/member IDs, settings, selected map, votes and moderator roles. A private session ticket protects migrated member identities.
-- An optional public-directory client and a separately deployable directory service. No public deployment is bundled or configured.
+## Verified native behavior
 
-Room policy flags are validated and replicated settings. Their enforcement against native gameplay, arbitrary external cheats or unowned native vehicle selection is **not implemented**. The room transport is not encrypted; password challenge authentication must not be described as TLS or a complete anti-cheat system.
+- Enter the original Local Wi-Fi state from the main Multiplayer tile, skipping obsolete ranked-service gates.
+- Navigate Create Room, mode/map/class selection, vehicle selection, boosters and the waiting room.
+- Display the original circuit illustrations and native player controls.
+- Create a local room: the game process binds UDP discovery port 6529 and additional ephemeral UDP ports.
+- Fill and remove AI entries in the waiting room.
 
-## Not implemented or not verified
+This is a native LAN foundation. Joining from another physical PC, synchronized human driving, automatic native race-host migration, Internet reachability and 60-human grids have not been verified.
+
+A temporary single-human launch experiment reached NetworkManager/NetworkServer start and Nevada loading, then displayed the native **You are alone** dialog. This does not establish a playable synchronized race. The temporary minimum-human change was restored and is not shipped.
+
+## Remaining integration
 
 | Requirement | Current state |
 | --- | --- |
-| Native race start and vehicle replication | Not connected to the room service |
-| 60 human racers | Not supported by the native bridge; explicit native start limit found at 12 |
-| Mixed human/bot race spawning | Calculation implemented; native synchronization/spawning pending |
-| Mutator/cheat/ownership/class policies in a race | Settings only; native enforcement pending |
-| Abrupt host failure recovery | Not implemented |
-| Migration during an active race | Not implemented |
-| Automatic Internet/NAT traversal | Not implemented; no router/firewall settings are changed |
-| Public-directory lease migration | Not verified; a new host cannot assume the departing host's lease |
-| Persistent mutual friends and presence across rooms | Not implemented |
-| Clans/groups with membership and permissions | Not implemented; profile group tag is cosmetic |
-| Public Internet directory deployment | Requires a selected reachable HTTPS deployment |
+| Original in-game menus and map artwork | Installed and manually exercised |
+| Native room creation and UDP binding | Observed on the host PC |
+| Joining and racing across different PCs | Not verified |
+| Public Internet directory in native browser | Standalone service tested; adapter pending |
+| Password entry and custom room policies in native UI | Pending |
+| Default / 1-60 grid and lap controls in native UI | Pending; former companion controls removed |
+| 60 human racers | Native server start rejects counts above 12; layout has eight visible entries |
+| Automatic native race-host migration | Not implemented |
+| Abrupt host recovery | Not implemented |
+| Persistent friends and clans | Not implemented |
 
-## Build and test the room service
+The solo grid patch does not establish 60-player network support. Native count, memory layout and serialization changes require separate work.
+
+## Experimental room-control service
+
+The C# room service and Python public directory remain available for development. They are **not connected to the native menus or race simulation**. Their tests are socket/protocol tests, not end-to-end game tests.
+
+Implemented: actual TCP servers created on hosts, password challenge authentication, LAN discovery, direct connections, public-directory publication, names/status/group tags, RTT measurements, room rules, Default/1-60 settings, planned bot counts, map votes, kick, moderator promotion and graceful lobby handover. A group tag is cosmetic; it is not a persistent clan.
+
+Password authentication uses a challenge, but the room transport is not TLS. Policy flags are replicated settings and do not enforce native gameplay or external cheat restrictions.
+
+The handover starts a new listener inside the elected client's process. On another PC that listener would run on that PC. Tests establish two successive transfers between distinct processes **on one PC**. They do not establish cross-machine reachability or race-state transfer.
+
+Known handover gaps: nominee reachability/NAT, per-client reconnect acknowledgements, fallback when a nominee fails, public-directory lease transfer, abrupt host loss, and authoritative race checkpoints. Lowest RTT to the departing host is the current election metric, not a complete measurement of connection quality.
+
+## Build and validation
 
 ```powershell
 .\multiplayer\Build-Rooms.ps1
 .\build\multiplayer\RoomCli.exe selftest
 .\build\multiplayer\RoomCli.exe migrationtest
+python -m unittest discover -s directory -p 'test_*.py' -v
 ```
 
-The tests start distinct host/client processes on loopback. They cover valid/invalid passwords, room capacity, permissions, voting, profiles, moderator roles, kick/leave, measured RTT and two successive graceful host changes. These are real socket tests, not tests between different physical PCs or across the Internet.
+Tests cover authentication, capacity, authorization, profiles, RTT, voting, promotion, kick/leave, defaults, bot-count calculations, two lobby transfers, directory leases, public/private LAN discovery and English network errors. The discovery integration requires Windows, the build above and an isolated LAN with no other room advertisers.
 
-Public-directory API tests:
+## Native implementation evidence
 
-```powershell
-python -m unittest discover -s directory -p test_directory.py -v
-python -m unittest discover -s directory -p test_room_integration.py -v
-```
+Supported original executable SHA-256: `6a5d3933f92809297631f1299c9906ec40fbb9d585a8c77115f321bfe733134c`.
 
-An additional local C# integration check exercised UDP public discovery, private discovery exclusion, C# publication into the Python HTTP directory, browsing, lease cleanup and HTTPS URL validation.
+The Multiplayer callback is RVA `0x84C7F0`; ranked tile getter is RVA `0x42F490`. Forced status 4 enables the native tile. The replacement callback preserves the existing GS_Play navigation frame, native ownership and cleanup, changes the state enum to `0x25`, and calls Local Wi-Fi factory VA `0xCDB7D0`. Image pointers and external relative calls are relocated into the injected callback.
 
-The integration check requires the Windows build above and an isolated LAN with no other room advertisers. It also checks an empty LAN scan on Windows, where an ICMP port-unreachable response must not be presented as a failed search.
+Runtime instrumentation observed the factory, layout, LocalLobby initialization and create call. The host process bound UDP 6529 and four ephemeral sockets. A temporary launch experiment observed native server start and successful Winsock binds, followed by the unsupported single-human condition described above. The instrumentation was detached and its temporary launch change restored. The installed launcher is verified separately after restart.
 
-Manual verification opened the companion interface through the game's Multiplayer tile, created a host through the interface, joined it from a separate CLI client, and applied 60 room slots. Both endpoints reported two humans and 58 planned bots. This verifies replicated room settings; it does not verify a 60-car race.
+Native NetworkServer::Start VA `0xD6D200` rejects more than 12 participants at `0xD6D2D1-0xD6D2D4`; another server-owned object has an inline 16-element array. Raising the comparison alone is unsafe.
 
-## Native investigation
+See [native UI resource research](NATIVE-MULTIPLAYER-RESEARCH.md) for original screen and artwork references. No extracted game artwork or complete game binaries are distributed.
 
-The supported binary contains real native Local Wi-Fi, Winsock UDP, network server/client and remote car/bike classes. The legacy Multiplayer callback is RVA `0x84C7F0`; its ranked tile status getter is RVA `0x42F490`. Status 4 enables the native tile button; the replacement click callback queues the companion UI.
+## Hosting and migration work
 
-Native `NetworkServer::Start`, preferred-image VA `0xD6D200`, rejects participant counts above 12 at `0xD6D2D1–0xD6D2D4`. A server-owned object also contains an inline 16-element array. Changing the comparison alone would be unsafe. The 61-racer solo grid patch does not remove these network constraints.
+The public directory only advertises room endpoints. It does not host gameplay, open router ports or relay traffic. Deployment still needs a selected reachable HTTPS host; see [the directory guide](../directory/README.md).
 
-The next native validation requires two independent compatible game instances to host/join Local Wi-Fi, observe actual discovery and replication traffic, then connect room identities/settings to that transport. Sixty-player support requires a separate memory-layout and serialization audit.
-
-## Directory deployment
-
-See [the directory guide](../directory/README.md). The directory advertises public room endpoints; it does not relay gameplay, open NAT ports, or prove an announced host is reachable. Private rooms are excluded from public discovery. Host addresses are obtained from the HTTP connection rather than an untrusted submitted address.
+Native race handover must transfer an authoritative checkpoint, open and verify the successor's endpoints, reconnect peers, acknowledge the imported checkpoint and new authority epoch, transfer directory ownership, then close the old authority. Abrupt recovery additionally needs continuously replicated checkpoints and protection against competing hosts. None of this can be inferred from a changed host label or a migrated TCP lobby.
