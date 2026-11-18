@@ -345,6 +345,14 @@ internal static class InjectionCatalog
     internal const string CareerLiveRefresh = "Career Live Refresh";
     internal const int CareerLiveStateOffset = 0x800;
     internal const int UnlimitedBoosterMaskOffset = 0x300;
+    internal const string MultiplayerEntryName = "Offline Multiplayer Entry";
+    internal static readonly InjectionHack MultiplayerEntry = new InjectionHack(MultiplayerEntryName,
+        0x84C7F0, "55 8B EC 83 E4 F8", (module,cave) =>
+            Raw("C7 05 " + I32(unchecked((int)(cave + 0x100))) + " 01 00 00 00 C3"));
+    // Status 4 selects the native information card and enables its real button.
+    // The click callback above owns navigation; no legacy server is contacted.
+    internal static readonly InjectionHack MultiplayerTile = new InjectionHack("Offline Multiplayer Tile",
+        0x42F490, "55 8B EC 6A FF", (module,cave) => Raw("8B 44 24 04 C7 00 04 00 00 00 C2 04 00"));
     private static readonly Dictionary<string, int> Values = new Dictionary<string, int>
     {
         { "Credits", 10000000 }, { "Nitro Ratio", BitConverter.ToInt32(BitConverter.GetBytes(8.0f), 0) },
@@ -1212,6 +1220,22 @@ internal static class NativeInjectionEngine
     internal static IntPtr RaceValueAddress(int offset)
     {
         return IntPtr.Add(Allocations[GridSpawnHook.Name], offset);
+    }
+
+    internal static bool ConsumeMultiplayerRequest()
+    {
+        IntPtr cave;
+        if (allocationProcessId == 0 || !Allocations.TryGetValue(InjectionCatalog.MultiplayerEntryName,out cave)) return false;
+        IntPtr process = OpenProcess(ProcessVmRead|ProcessVmWrite|ProcessVmOperation,false,allocationProcessId);
+        if (process == IntPtr.Zero) return false;
+        try
+        {
+            byte[] flag = new byte[4]; IntPtr count;
+            IntPtr address = IntPtr.Add(cave,0x100);
+            if (!ReadProcessMemory(process,address,flag,4,out count) || count.ToInt32()!=4 || BitConverter.ToInt32(flag,0)==0) return false;
+            return WriteProcessMemory(process,address,new byte[4],4,out count) && count.ToInt32()==4;
+        }
+        finally { CloseHandle(process); }
     }
 
     internal static bool SetCareerLiveMode(bool enabled, out string error)

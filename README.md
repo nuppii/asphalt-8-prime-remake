@@ -22,6 +22,8 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 
 ## What it does
 
+**Multiplayer development preview:** this branch adds real self-hosted room control, voting and graceful lobby handover. Native racing is not connected yet. See [multiplayer implementation status](docs/MULTIPLAYER.md) for the tested scope and remaining work.
+
 - Launches the registered offline game from one executable.
 - Shows or hides a dark translucent mod menu with **Insert**, with categorized tools and starred favorites.
 - Remembers enabled tools and numeric settings across menu navigation and game restarts.
