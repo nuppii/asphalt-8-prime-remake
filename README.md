@@ -18,6 +18,8 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 
 ![English currency and purchase controls](docs/images/economy.jpg)
 
+![In-Game Mutators for player and bots](docs/images/mutators.jpg)
+
 ## What it does
 
 - Launches the registered offline game from one executable.
@@ -26,6 +28,7 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 - Migrates settings and favorites created by the earlier French interface.
 - Applies version-specific native patches only after checking expected bytes.
 - Supports independent custom lap and racer settings, with a procedural starting grid and randomized player position.
+- Adjusts seven live physics multipliers independently for the player and bots, with individual toggles and group resets.
 - Provides local wallet, purchase, sale, booster, tuning and career controls.
 
 ### Menu sections
@@ -37,6 +40,7 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 | Currency & Inventory | Set credits, gems and fusion coins; catalogue-price or 1 CR purchases; receipt-based sales; booster toggles and timers |
 | Upgrades | Offline PRO purchase path, MAX/PRO overlays, R&D tuning and decal preview |
 | Racing | Nitro tools, finish patches, crash behavior, race timer, speed/drift modifiers and collision behavior |
+| In-Game Mutators | Separate player/bot acceleration, top speed, nitro power, air rotation, drift radius, steering and braking multipliers |
 | AI & Opponents | Automatic driver, AI finish, stopped vehicles, traffic and ghost behavior |
 | Custom Races | Lap count, racer count and additional Quick Race track entries |
 | Progression | Career/Moto Blitz access, driver name, mastery, R&D and event-related patches |
@@ -96,6 +100,24 @@ Close the game and existing trainer before replacing the launcher. Restart the g
 
 ## Using the trainer
 
+### In-Game Mutators
+
+The **Player** and **Bots** groups expose the same seven controls. Each starts disabled at **1.00×** and accepts **0.00–100.00×**. Set a multiplier, click **Apply**, and use **Enable/Disable** for that individual effect. Applied changes take effect during the running race. The small **Reset player** and **Reset bots** buttons beneath their groups disable that group's effects and return its multipliers to 1.00×.
+
+| Control | Effect |
+| --- | --- |
+| Acceleration | Engine force gain |
+| Top speed | Native speed cap multiplier |
+| Nitro power | Nitro boost force; nitro capacity is unchanged |
+| Air rotation | Angular velocity while every wheel is airborne, affecting rolls and spins |
+| Drift radius | Inverse gain on the game's drift yaw assistance; an approximate turning-radius control rather than a distance in meters |
+| Steering response | Steering angle gain |
+| Braking | Braking force gain |
+
+Values below 1 reduce the directly scaled quantities; smaller drift-radius factors instead produce tighter assisted turns. Large gains can make a car difficult to control. A zero top-speed multiplier uses a small **0.01 native-unit** cap to avoid division by zero. Drift radius also uses a minimum factor of 0.01 and clamps its assisted yaw angle to ±π. These bounds keep the native calculations finite.
+
+Mutators operate on live per-car physics and leave saved tuning unchanged. Air rotation removes the previous frame's gain before applying the current one, preventing exponential accumulation. Settings and enabled states are retained in `mutators.txt`; **Reset** provides a quick return to normal physics without editing that file. See [the validation notes](docs/VALIDATION.md) for the tested combinations.
+
 ### Custom races
 
 Set **Lap count** and **Racer count**, click **Apply**, and enable each override independently. Racer count includes the player: **61 means you plus 60 opponents**. The UI allows 1–999,999 laps and 1–61 racers. These are input bounds, not a claim that every value has completed a full race.
@@ -131,6 +153,7 @@ State is stored beneath the game folder in `_offline_patch_backup/tools/`:
 | File | Purpose |
 | --- | --- |
 | `active-tools.txt` | Enabled tools and numeric values |
+| `mutators.txt` | Separate player/bot multipliers and enabled states |
 | `favorites.txt` | Favorite tool names and section destinations |
 | `car-receipts.txt` | Recorded purchase prices for refunds |
 | `trainer.log` | Local diagnostics |
@@ -142,6 +165,8 @@ Save data belongs to the registered Windows package's `LocalState` folder. See [
 This project has been exercised on the local Windows installation. Recent observed career starts include a class C Infection event with the class D Audi R8 e-tron, a Renault Clio-restricted event with a class D Dodge Dart GT, and a class B Great Wall event with the Dodge. Those runs displayed **5 laps and 40 racers**. Class and required-car restrictions were also checked by toggling the override on and off in the same garage screen.
 
 The English build compiles successfully, and the game language survives a restart. Screenshots document the visible English UI. Ported signatures and compilation do **not** establish that every cheat works correctly in every event or with every car. Full race completion across all tracks, 61-racer endurance, every MAX/PRO combination, every Moto Blitz gate, and all server-dependent event paths remain broader regression work.
+
+The mutator checks include a compiled native fixture, live player/bot measurements in an eight-car Sector 8 race with the Audi R8 e-tron, player UI enable/reset, and zero/100× airborne rotation samples. No game crash was observed during those checks. This does not establish coverage for every car, track, or 61-racer combination.
 
 Multiplayer, daily tasks, remote events, store downloads and server rewards may remain unavailable or display loading indicators. Unlocking a local UI gate does not restore an online service. Consult [validation notes](docs/VALIDATION.md) before reporting an issue.
 
@@ -158,7 +183,7 @@ Multiplayer, daily tasks, remote events, store downloads and server rewards may 
 ## Project layout
 
 ```text
-trainer/                  WinForms launcher, patch engine and native grid builder
+trainer/                  WinForms launcher, patch engine, native grid and mutators
 scripts/Install-Offline.ps1
 scripts/patch_offline.py   Version-checked local executable/manifest patcher
 docs/FEATURES.md           Menu tool catalogue

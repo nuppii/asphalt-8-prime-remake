@@ -51,6 +51,28 @@ This list follows the visible menu declarations. Names inherited from the commun
 - Boost Mode
 - Intangible Vehicles
 
+## In-Game Mutators
+
+The **Player** and **Bots** groups each expose the following live controls independently.
+
+| Control | Modified quantity |
+| --- | --- |
+| Acceleration | Engine force |
+| Top speed | Native speed cap |
+| Nitro power | Boost force, without changing boost capacity |
+| Air rotation | Airborne angular velocity for rolls and spins |
+| Drift radius | Inverse drift yaw-assist gain, approximating turning radius |
+| Steering response | Steering angle gain |
+| Braking | Braking force |
+
+- Every multiplier ranges from 0.00× to 100.00×, defaults to 1.00× and starts disabled.
+- **Apply** updates the selected value. Individual **Enable/Disable** buttons control each effect.
+- A **Reset** button beneath each group disables its seven effects and restores all seven multipliers to 1.00×.
+- Separate values and enabled states are retained in `mutators.txt`; starred controls link back to the mutator section.
+- Effects apply to live vehicle physics, leaving the underlying saved tuning unchanged.
+- Air rotation applies only when all wheels are airborne and normalizes the previous frame's gain before applying the new one.
+- Zero top speed uses a 0.01 native-unit floor. Drift radius uses a minimum factor of 0.01 and clamps assisted yaw to ±π; it does not specify an exact radius in meters.
+
 ## AI and opponents
 
 - Ultimate AI Finish

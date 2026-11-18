@@ -16,6 +16,18 @@ Direct patches verify original or expected replacement bytes before writing. Inj
 
 `GridSpawn.c` implements the extended grid preparation logic. `Build-Trainer.ps1` compiles and links it as an x86 native image, then embeds it as `GridSpawn.x86` in the managed executable. `GridSpawnHook.cs` loads and relocates that image into the game process. Lap and racer settings have independent runtime slots and restoration records.
 
+## In-game physics mutators
+
+`MutatorEngine.cs` loads the freestanding x86 image built from `MutatorPhysics.c`, embedded as `MutatorPhysics.x86`. The PE loader checks image bounds and relocations before installing three version-specific hooks for the complete vehicle update, engine outputs and drift assistance. Installation checks the original byte signatures, suspends the game's threads, verifies that no instruction pointer occupies a replaced range, and rechecks signatures before writing. Failed installation rolls back changed hooks before resuming the threads.
+
+The remote state begins with the game module and original-update trampoline addresses, followed by two aligned 32-bit masks and two sets of seven float multipliers. Player and bot classification chooses the appropriate mask and values for each car. Diagnostics record stage calls, applied masks, before/after values and application counts. These runtime records are independent of the saved garage tuning.
+
+Engine-stage gains modify transient acceleration, speed-cap, nitro-force, steering and braking results. The drift stage adjusts assisted yaw inversely with the radius factor. The complete-update wrapper keeps a per-car cache for airborne angular velocity, removes the previous gain before the next update and applies the current gain afterward. This prevents repeated multiplication from compounding across frames. Per-car caches also allow disabling or resetting the effect to restore the unscaled behavior.
+
+The UI stores desired settings separately from successfully applied states. `mutators.txt` uses invariant-culture rows of `target|parameter|enabled|multiplier`, with independent player and bot entries. A new game process restores enabled settings; a closed game clears the displayed applied states. The defaults are disabled with multipliers of 1.00×.
+
+Disabling clears the relevant mask bit. A group reset clears its mask and writes seven 1.00× values. The hooks remain allocated for the life of the game process, avoiding code-memory release while a game thread could still be executing it. No permanent executable or save-data changes are needed for these mutators.
+
 ## Local command processing
 
 Wallet, purchase, receipt, sale and driver-name operations are queued for the game's own processing path. The overlay polls for confirmation instead of treating submission as success. The career refresh hook rebuilds the selector on the game's UI thread when the override changes.
@@ -34,6 +46,6 @@ Before experimenting, close the game and copy the offline package's full `LocalS
 
 Keep `_offline_patch_backup/tools/car-receipts.txt` with the associated save if you need later purchase refunds. Avoid mixing receipts from a different save.
 
-To stop applying saved tools, close the game and trainer, preserve a copy of `active-tools.txt`, then move it outside the `tools` folder before restarting. This only stops runtime overlays. To undo persistent transactions, restore your own matching save backup while the game is closed.
+To stop applying saved tools, close the game and trainer, preserve copies of `active-tools.txt` and `mutators.txt`, then move those files outside the `tools` folder before restarting. In the running trainer, the mutator group reset buttons provide the same return to disabled, 1.00× defaults for their respective groups. This only stops runtime overlays. To undo persistent transactions, restore your own matching save backup while the game is closed.
 
 To restore the selected game copy's original executable and manifest, close all associated processes and copy `Asphalt8.exe.original` and `AppxManifest.xml.original` from `_offline_patch_backup` back to their original filenames. Package registration may need to be updated for that restored identity. Use the untouched source installation when possible. Keep backups until the restored copy has been verified.

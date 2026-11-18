@@ -12,6 +12,9 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        var english = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        System.Threading.Thread.CurrentThread.CurrentCulture = english;
+        System.Threading.Thread.CurrentThread.CurrentUICulture = english;
         bool firstInstance;
         using (var instance = new System.Threading.Mutex(false, @"Local\Asphalt8OfflineTrainer_0pp20fcewvvtj", out firstInstance))
         {
@@ -122,12 +125,20 @@ internal sealed class TrainerForm : Form
     private readonly Color muted = Color.FromArgb(145, 158, 178);
     private readonly Label title;
     private readonly Label sectionTitle;
+    private readonly Label subtitle;
     private readonly Label status;
     private readonly FlowLayoutPanel options;
     private readonly Dictionary<string, bool> importedStates = new Dictionary<string, bool>();
     private readonly HashSet<string> installedRaceSettings = new HashSet<string>();
     private readonly HashSet<string> savedTools = new HashSet<string>();
     private readonly Dictionary<string,int> savedValues = new Dictionary<string,int>();
+    private static readonly string[] MutatorNames =
+    {
+        "Acceleration", "Top speed", "Nitro power", "Air rotation", "Drift radius", "Steering response", "Braking"
+    };
+    private readonly float[,] mutatorValues = new float[2, 7];
+    private readonly bool[,] mutatorEnabled = new bool[2, 7];
+    private readonly bool[,] mutatorApplied = new bool[2, 7];
     private readonly Timer stateMonitor = new Timer();
     private int observedGamePid;
     private bool walletEditPending;
@@ -146,10 +157,13 @@ internal sealed class TrainerForm : Form
         AppDomain.CurrentDomain.BaseDirectory, "_offline_patch_backup", "tools", "active-tools.txt");
     private static readonly string CarReceiptsPath = Path.Combine(
         AppDomain.CurrentDomain.BaseDirectory, "_offline_patch_backup", "tools", "car-receipts.txt");
+    private static readonly string MutatorSettingsPath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory, "_offline_patch_backup", "tools", "mutators.txt");
 
     public TrainerForm()
     {
         LoadToolStates();
+        LoadMutatorSettings();
         Text = "Asphalt 8 Offline Trainer";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
@@ -213,6 +227,7 @@ internal sealed class TrainerForm : Form
         AddSection(sidebar, "CURRENCY & INVENTORY", false);
         AddSection(sidebar, "UPGRADES", false);
         AddSection(sidebar, "RACING", false);
+        AddSection(sidebar, "IN-GAME MUTATORS", false);
         AddSection(sidebar, "AI & OPPONENTS", false);
         AddSection(sidebar, "CUSTOM RACES", false);
         AddSection(sidebar, "PROGRESSION", false);
@@ -234,7 +249,7 @@ internal sealed class TrainerForm : Form
         };
         content.Controls.Add(sectionTitle);
 
-        var subtitle = new Label
+        subtitle = new Label
         {
             Dock = DockStyle.Top,
             Height = 44,
@@ -409,6 +424,9 @@ internal sealed class TrainerForm : Form
         options.Controls.Clear();
         sectionTitle.Text = ToTitle(name);
         sectionTitle.UseMnemonic = false;
+        subtitle.Text = name == "IN-GAME MUTATORS"
+            ? "Independent player and bot physics • 0–100× • changes apply during the race."
+            : "Local garage controls. Unverified options remain locked for build 4.8.0.7.";
 
         if (name == "★ FAVORITES")
         {
@@ -467,6 +485,11 @@ internal sealed class TrainerForm : Form
             options.Controls.Add(MakeInjectionOption("Boost Mode"));
             options.Controls.Add(MakeInjectionOption("Intangible Vehicles"));
         }
+        else if (name == "IN-GAME MUTATORS")
+        {
+            AddMutatorGroup(0, "PLAYER");
+            AddMutatorGroup(1, "BOTS");
+        }
         else if (name == "AI & OPPONENTS")
         {
             options.Controls.Add(MakeImportedOption("Ultimate AI Finish"));
@@ -507,6 +530,161 @@ internal sealed class TrainerForm : Form
 
         status.Text = ToTitle(name) + "  •  integrated trainer tools";
         options.ResumeLayout();
+    }
+
+    private void AddMutatorGroup(int target, string titleText)
+    {
+        var heading = new Panel { Width=690, Height=49, BackColor=background, Margin=new Padding(0,8,0,5) };
+        heading.Controls.Add(new Label { Text=titleText, Font=new Font("Segoe UI Semibold",12f), ForeColor=accent,
+            Location=new Point(7,1), AutoSize=true });
+        heading.Controls.Add(new Label { Text="0.00–100.00×  •  1.00× = original physics", Font=new Font("Segoe UI",8.5f),
+            ForeColor=muted, Location=new Point(8,26), AutoSize=true });
+        options.Controls.Add(heading);
+        for (int parameter=0; parameter<MutatorNames.Length; parameter++)
+            options.Controls.Add(MakeMutatorOption(target,parameter));
+
+        var footer = new Panel { Width=690, Height=39, BackColor=background, Margin=new Padding(0,0,0,14) };
+        var reset = new Button { Text="Reset "+(target==0?"player":"bots"), FlatStyle=FlatStyle.Flat,
+            Font=new Font("Segoe UI Semibold",8.5f), ForeColor=muted, BackColor=panel,
+            Location=new Point(8,2), Size=new Size(126,30), TabStop=false };
+        reset.FlatAppearance.BorderColor=Color.FromArgb(67,78,96);
+        reset.Click += (_,__) =>
+        {
+            RestoreToolsForNewGame();
+            string error;
+            if (observedGamePid!=0 && !MutatorEngine.ResetTarget(target,out error))
+            {
+                status.Text="Could not reset "+(target==0?"player":"bots")+": "+error;
+                return;
+            }
+            for (int i=0;i<MutatorNames.Length;i++)
+            {
+                mutatorEnabled[target,i]=false;
+                mutatorApplied[target,i]=false;
+                mutatorValues[target,i]=1f;
+            }
+            SaveMutatorSettings();
+            ShowSection(currentSection);
+            status.Text=(target==0?"Player":"Bot")+" mutators reset • original physics restored";
+        };
+        footer.Controls.Add(reset);
+        footer.Controls.Add(new Label { Text="Disables this group's mutators and restores every multiplier to 1.00×.",
+            Font=new Font("Segoe UI",8f), ForeColor=muted, AutoSize=true, Location=new Point(147,10) });
+        options.Controls.Add(footer);
+    }
+
+    private Control MakeMutatorOption(int target, int parameter)
+    {
+        string targetName=target==0?"Player":"Bots";
+        string label=MutatorNames[parameter];
+        bool requested=mutatorEnabled[target,parameter];
+        bool applied=mutatorApplied[target,parameter];
+        var row=new Panel { Width=690, Height=66, BackColor=panel, Margin=new Padding(0,0,0,7) };
+        row.Controls.Add(new Label { Text=label, Font=new Font("Segoe UI Semibold",10f), ForeColor=Color.White,
+            Location=new Point(18,8), Size=new Size(268,24) });
+        string detail=!requested?"DISABLED • ORIGINAL PHYSICS":applied?"ACTIVE • "+mutatorValues[target,parameter].ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)+"×":"NOT APPLIED • WAITING FOR GAME";
+        row.Controls.Add(new Label { Text=detail, Font=new Font("Segoe UI Semibold",7.5f),
+            ForeColor=applied?Color.FromArgb(84,222,150):muted, Location=new Point(18,38), AutoSize=true });
+        var value=new NumericUpDown { Minimum=0m, Maximum=100m, DecimalPlaces=2, Increment=0.10m,
+            Value=(decimal)mutatorValues[target,parameter], Location=new Point(290,17), Size=new Size(90,30),
+            Font=new Font("Segoe UI Semibold",10f), BackColor=Color.FromArgb(25,30,40), ForeColor=Color.White };
+        var apply=new Button { Text="APPLY", FlatStyle=FlatStyle.Flat, Font=new Font("Segoe UI Semibold",8.5f),
+            ForeColor=Color.White, BackColor=Color.FromArgb(0,122,160), Location=new Point(384,14), Size=new Size(98,36), TabStop=false };
+        var toggle=new Button { Text=requested?"DISABLE":"ENABLE", FlatStyle=FlatStyle.Flat,
+            Font=new Font("Segoe UI Semibold",8.5f), ForeColor=Color.White,
+            BackColor=applied?Color.FromArgb(22,145,92):Color.FromArgb(0,122,160),
+            Location=new Point(525,14), Size=new Size(145,36), TabStop=false };
+        apply.FlatAppearance.BorderColor=accent;
+        toggle.FlatAppearance.BorderColor=accent;
+        Action<bool> commit = toggleRequested =>
+        {
+            float selected=(float)value.Value;
+            RestoreToolsForNewGame();
+            bool enable=toggleRequested?!mutatorEnabled[target,parameter]:mutatorEnabled[target,parameter];
+            string error;
+            if (observedGamePid==0 && enable)
+            {
+                status.Text="Start the game before enabling "+targetName.ToLowerInvariant()+" mutators.";
+                return;
+            }
+            if (observedGamePid!=0 && (enable || mutatorApplied[target,parameter]) &&
+                !MutatorEngine.Configure(target,parameter,enable,selected,out error))
+            {
+                status.Text=targetName+" • "+label+": "+error;
+                return;
+            }
+            mutatorValues[target,parameter]=selected;
+            mutatorEnabled[target,parameter]=enable;
+            mutatorApplied[target,parameter]=enable;
+            SaveMutatorSettings();
+            ShowSection(currentSection);
+            status.Text=targetName+" • "+label+(enable?" = "+selected.ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)+"×":toggleRequested?" disabled • original physics restored":" multiplier saved");
+        };
+        apply.Click += (_,__) => commit(false);
+        toggle.Click += (_,__) => commit(true);
+        row.Controls.Add(value);
+        row.Controls.Add(apply);
+        row.Controls.Add(toggle);
+        AddFavoriteButton(row,targetName+" • "+label);
+        return row;
+    }
+
+    private void LoadMutatorSettings()
+    {
+        for (int target=0;target<2;target++)
+            for (int parameter=0;parameter<MutatorNames.Length;parameter++) mutatorValues[target,parameter]=1f;
+        try
+        {
+            if (!File.Exists(MutatorSettingsPath)) return;
+            foreach (string line in File.ReadAllLines(MutatorSettingsPath))
+            {
+                string[] parts=line.Split('|');
+                int target,parameter;
+                float value;
+                if (parts.Length!=4 || !int.TryParse(parts[0],out target) || !int.TryParse(parts[1],out parameter) ||
+                    target<0 || target>1 || parameter<0 || parameter>=MutatorNames.Length ||
+                    !float.TryParse(parts[3],System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out value) ||
+                    float.IsNaN(value) || float.IsInfinity(value) || value<0f || value>100f || (parts[2]!="0" && parts[2]!="1")) continue;
+                mutatorEnabled[target,parameter]=parts[2]=="1";
+                mutatorValues[target,parameter]=value;
+            }
+        }
+        catch (IOException ex) { Log("Mutator settings could not be read: "+ex.Message); }
+        catch (UnauthorizedAccessException ex) { Log("Mutator settings unavailable: "+ex.Message); }
+    }
+
+    private void SaveMutatorSettings()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(MutatorSettingsPath));
+            var lines=new List<string>();
+            for (int target=0;target<2;target++)
+                for (int parameter=0;parameter<MutatorNames.Length;parameter++)
+                    lines.Add(target+"|"+parameter+"|"+(mutatorEnabled[target,parameter]?"1":"0")+"|"+
+                        mutatorValues[target,parameter].ToString("R",System.Globalization.CultureInfo.InvariantCulture));
+            File.WriteAllLines(MutatorSettingsPath,lines.ToArray());
+        }
+        catch (IOException ex) { Log("Mutator settings could not be saved: "+ex.Message); }
+        catch (UnauthorizedAccessException ex) { Log("Mutator settings could not be saved: "+ex.Message); }
+    }
+
+    private void RestoreMutatorsForNewGame()
+    {
+        Array.Clear(mutatorApplied,0,mutatorApplied.Length);
+        bool requested=false;
+        foreach (bool enabled in mutatorEnabled) if (enabled) { requested=true; break; }
+        if (!requested) return;
+        string error;
+        if (!MutatorEngine.EnsureInstalled(out error)) { Log("Mutator engine: "+error); return; }
+        for (int target=0;target<2;target++)
+            for (int parameter=0;parameter<MutatorNames.Length;parameter++)
+            {
+                if (!mutatorEnabled[target,parameter]) continue;
+                if (MutatorEngine.Configure(target,parameter,true,mutatorValues[target,parameter],out error))
+                    mutatorApplied[target,parameter]=true;
+                else Log((target==0?"Player":"Bots")+" mutator "+MutatorNames[parameter]+": "+error);
+            }
     }
 
     private Control MakeDriverNameOption()
@@ -1761,7 +1939,15 @@ internal sealed class TrainerForm : Form
 
     private void RestoreToolsForNewGame()
     {
-        Process[] games=Process.GetProcessesByName("Asphalt8"); if(games.Length==0){observedGamePid=0;return;}
+        Process[] games=Process.GetProcessesByName("Asphalt8");
+        if(games.Length==0)
+        {
+            bool hadGame=observedGamePid!=0;
+            observedGamePid=0;
+            Array.Clear(mutatorApplied,0,mutatorApplied.Length);
+            if(hadGame && currentSection=="IN-GAME MUTATORS") ShowSection(currentSection);
+            return;
+        }
         int pid=games[0].Id; if(pid==observedGamePid)return; observedGamePid=pid; importedStates.Clear();
         installedRaceSettings.Clear();
         string gridError;
@@ -1800,6 +1986,7 @@ internal sealed class TrainerForm : Form
             string careerError;
             if (!SetCareerAccess(true, out careerError)) Log("Career access: " + careerError);
         }
+        RestoreMutatorsForNewGame();
         ShowSection(currentSection);
         status.Text=importedStates.Count+" saved tool(s) restored";
     }
