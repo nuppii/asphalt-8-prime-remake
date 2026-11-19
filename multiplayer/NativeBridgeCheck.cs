@@ -7,6 +7,7 @@ using OfflineLab.Multiplayer;
 
 internal static class NativeInjectionEngine
 {
+    internal static bool NativeDirectDiscoveryReady(int pid){return false;}
     internal static byte[] State=new byte[3784];internal static int Pid=111;
     internal static bool ReadNativeLobbyState(out int pid,out byte[] state){pid=Pid;state=(byte[])State.Clone();return true;}
     internal static void WriteNativeLobbyState(int pid,int offset,byte[] data){if(pid!=Pid)throw new Exception("Stale process write.");Buffer.BlockCopy(data,0,State,offset,data.Length);}

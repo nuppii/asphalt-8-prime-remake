@@ -26,6 +26,8 @@ Real captures from the local Windows build, with the game and trainer set to Eng
 
 **Native multiplayer development:** the Multiplayer tile opens the original in-game Create/Join interface. Added native pages cover Room Options, Find by Name, Friends, Connection and keyboard entry, with saved room names and Default / 1–60 grid and lap settings. The AI-fill setting is linked to the original host control: adding/removing six lobby AI and saved ON/OFF synchronization were verified in the installed build. Other custom native race policies remain requested settings, with enforcement unverified. The optional self-hosted directory supports room-name search, persistent friends, presence and invitation delivery. The managed bridge passes local HTTP tests, and native request acceptance, presence, inbox resolution and dismissal were exercised against an owned local service. Resolving an invitation does not join a native race. No public HTTPS service, cross-PC race, 60-human grid or native race-host migration is established. See [multiplayer implementation status](docs/MULTIPLAYER.md).
 
+The native **JOIN BY IPV4 ADDRESS** action adds directed discovery without requiring a public directory. Its compiled helper/wrapper passed isolated checks, and the installed UI rejected empty/invalid input. A successful remote join and Internet race remain unverified. The design keeps the race on the player host and permits a pause during migration; see [player-hosted Internet work](docs/INTERNET-HOSTING.md).
+
 - Launches the registered offline game from one executable.
 - Shows or hides a dark translucent mod menu with **Insert**, with categorized tools and starred favorites.
 - Remembers enabled tools and numeric settings across menu navigation and game restarts.

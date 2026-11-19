@@ -26,7 +26,7 @@ typedef void (__cdecl *BindCall)(void);
 enum { A_PAGE=1, A_TOGGLE, A_GRID, A_LAPS, A_EDIT, A_FIND, A_FRIENDS,
        A_KEY, A_SPACE, A_DELETE, A_CANCEL, A_CONFIRM,
        A_SELECT_ROOM,A_JOIN_ROOM,A_SELECT_FRIEND,A_INVITE_FRIEND,
-       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID };
+       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN };
 enum { E_ROOM=1,E_QUERY=2,E_NICKNAME=3,E_PASSWORD=4,E_DIRECTORY=5,E_FRIEND_ID=6 };
 typedef struct Control {
     Pair visual, button, connection;
@@ -200,6 +200,7 @@ static void Build(void) {
     Button(NUI_OPTIONS,A_PAGE,NUI_MAIN,"BACK");
     Button(NUI_FIND,A_EDIT,E_QUERY,"");Button(NUI_FIND,A_FIND,0,"SEARCH DIRECTORY");
     Button(NUI_FIND,A_LAN_JOIN,0,"JOIN LAN BY NAME");
+    Button(NUI_FIND,A_DIRECT_JOIN,0,"JOIN BY IPV4 ADDRESS");
     for(i=0;i<8;++i)Button(NUI_FIND,A_SELECT_ROOM,i,"");
     Button(NUI_FIND,A_RESULT_PAGE,0,"MORE RESULTS");
     Button(NUI_FIND,A_JOIN_ROOM,0,"JOIN SELECTED ROOM");
@@ -286,6 +287,7 @@ static void Click(Control *c) {
     case A_RESET_RACE:gState->grid=0;gState->laps=0;Request(NUI_REQUEST_POLICY,NUI_FIELD_GRID|NUI_FIELD_LAPS);break;
     case A_FIND:gResultOffset=0;Request(NUI_REQUEST_FIND,NUI_FIELD_QUERY);break;
     case A_LAN_JOIN:gLaunchLan=1;break;
+    case A_DIRECT_JOIN:if(gState->bridgeFlags&NUI_BRIDGE_DIRECT_QUERY)gLaunchLan=2;break;
     case A_FRIENDS:gResultOffset=0;Request(NUI_REQUEST_FRIENDS,0);break;
     case A_SELECT_ROOM:if(c->value<gState->roomCount && c->value<8)gState->selectedRoom=c->value;break;
     case A_JOIN_ROOM:if(gState->selectedRoom<gState->roomCount && gState->selectedRoom<8)Request(NUI_REQUEST_JOIN_SELECTED,0);break;
@@ -304,8 +306,8 @@ static void Click(Control *c) {
     case A_CANCEL:gState->page=gReturnPage;gEdit=0;break;
     case A_CONFIRM:dst=EditTarget(&cap);Copy(dst,gEditText,cap);
         field=gEdit==E_ROOM?NUI_FIELD_ROOM_NAME:gEdit==E_QUERY?NUI_FIELD_QUERY:gEdit==E_PASSWORD?NUI_FIELD_PASSWORD:NUI_FIELD_NICKNAME;
-        kind=gEdit==E_DIRECTORY?NUI_REQUEST_DIRECTORY:gEdit==E_FRIEND_ID?NUI_REQUEST_ADD_FRIEND:gEdit==E_ROOM?NUI_REQUEST_ROOM_NAME:gEdit==E_QUERY?NUI_REQUEST_FIND:gEdit==E_PASSWORD?NUI_REQUEST_PASSWORD:NUI_REQUEST_NICKNAME;
-        Request(kind,field);gState->page=gReturnPage;gEdit=0;break;
+        kind=gEdit==E_DIRECTORY?NUI_REQUEST_DIRECTORY:gEdit==E_FRIEND_ID?NUI_REQUEST_ADD_FRIEND:gEdit==E_ROOM?NUI_REQUEST_ROOM_NAME:gEdit==E_QUERY?NUI_REQUEST_NONE:gEdit==E_PASSWORD?NUI_REQUEST_PASSWORD:NUI_REQUEST_NICKNAME;
+        if(kind)Request(kind,field);gState->page=gReturnPage;gEdit=0;break;
     }
     Refresh();
 }
@@ -348,6 +350,7 @@ static void Refresh(void) {
             Visible(c->visual.ptr,c->page==page && c->attached);
             if(c->value<count && c->value<8){Copy(text,selected==c->value?"> ":"",sizeof(text));Append(text,entries[c->value].label,sizeof(text));Label(c,text);}continue;}
         if(c->action==A_JOIN_ROOM)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY) && gState->selectedRoom<gState->roomCount && gState->selectedRoom<8);
+        if(c->action==A_DIRECT_JOIN)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DIRECT_QUERY)!=0);
         if(c->action==A_INVITE_FRIEND)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS) && gState->selectedFriend<gState->friendCount && gState->selectedFriend<8);
         if(c->action==A_REQUEST)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS) && gState->selectedFriend<gState->friendCount && gState->selectedFriend<8);
         if(c->action==A_COPY_ID)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS)!=0);
@@ -418,5 +421,5 @@ __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState 
         shared->page=NUI_MAIN;Build();
     }
     if(gRoot)Refresh();
-    if(gLaunchLan){gLaunchLan=0;NativeLanBegin(module,screen,shared);}
+    if(gLaunchLan){U32 direct=gLaunchLan==2;gLaunchLan=0;if(direct)NativeLanBeginDirect(module,screen,shared);else NativeLanBegin(module,screen,shared);}
 }

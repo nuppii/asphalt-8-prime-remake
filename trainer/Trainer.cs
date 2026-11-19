@@ -1967,6 +1967,8 @@ internal sealed class TrainerForm : Form
             Log("Native room name: " + multiplayerError);
         else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeClassicLaps,true,out multiplayerError))
             Log("Native Classic laps: " + multiplayerError);
+        else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeDirectDiscovery,true,out multiplayerError))
+            Log("Native direct discovery: " + multiplayerError);
         foreach (string name in new[] { "Offline Standard Upgrade Credits", "Offline Standard Upgrade Gems" })
         {
             string upgradeError;

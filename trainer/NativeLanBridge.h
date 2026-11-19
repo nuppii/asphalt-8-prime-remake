@@ -7,12 +7,16 @@
  * An exact, ASCII-case-insensitive LAN name must match exactly one native
  * discovered Room. Unicode bytes compare exactly. Duplicate names leave
  * the original room browser in control. No Room pointers survive a call.
+ * BeginDirect instead parses explicit IPv4 and matches the observed sender.
+ * Dispatch replaces only Finder's periodic call, scoped to this live browser.
  * 900 Tick calls bound the attempt; this is not a wall-clock timeout.
  * Native version/class checks remain intact. A dispatched join is not
  * evidence of connection, race synchronization, or internet discovery.
  * This explicit native action does not write managed room results/requests.
  */
 unsigned __cdecl NativeLanBegin(unsigned module, void *localMenu, NativeUiState *state);
+__declspec(dllexport) unsigned __cdecl NativeLanBeginDirect(unsigned module, void *localMenu, NativeUiState *state);
+__declspec(dllexport) void __cdecl NativeLanDispatch(unsigned module, void *finder, NativeUiState *state);
 void __cdecl NativeLanTick(unsigned module, void *currentScreen, NativeUiState *state);
 void __cdecl NativeLanCancel(void);
 #endif

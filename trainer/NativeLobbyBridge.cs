@@ -87,7 +87,7 @@ internal sealed class NativeLobbyBridge : IDisposable
         while(length>0 && length<text.Length && (text[length]&0xc0)==0x80)length--;
         Buffer.BlockCopy(text,0,data,0,length);NativeInjectionEngine.WriteNativeLobbyState(processId,offset,data);
     }
-    private void Word(int offset,int value){NativeInjectionEngine.WriteNativeLobbyState(processId,offset,BitConverter.GetBytes(value));}
+    private void Word(int offset,int value){if(offset==44&&NativeInjectionEngine.NativeDirectDiscoveryReady(processId))value|=32;NativeInjectionEngine.WriteNativeLobbyState(processId,offset,BitConverter.GetBytes(value));}
     private void Status(string message){Text(52,160,message);}
     private void Poll()
     {

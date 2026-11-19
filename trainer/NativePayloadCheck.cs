@@ -5,7 +5,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 // Isolated x86 fixture: never opens another process or starts the trainer/game.
-// Only generated lap code and early-return native UI paths run in owned memory.
+// Generated lap/direct-discovery code and native UI guards run in owned memory.
+// Direct-discovery engine callbacks are explicit fixture stubs, not game peers.
 internal static class NativePayloadCheck
 {
     const BindingFlags Any = BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -13,6 +14,8 @@ internal static class NativePayloadCheck
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool VirtualFree(IntPtr address, UIntPtr size, uint type);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void Tick(uint module, IntPtr screen, IntPtr state);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void Run();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint BeginDirect(uint module,IntPtr menu,IntPtr state);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint ParseIPv4(IntPtr text,IntPtr destination);
     static int checks;
     static void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); ++checks; }
     static uint U(IntPtr p) { return unchecked((uint)p.ToInt32()); }
@@ -63,6 +66,50 @@ internal static class NativePayloadCheck
         Console.WriteLine("PASS composed wallet: allocation, preservation prefix, native call, "+count+" relocations and early-return UI guards.");
     }
     static void Imm(List<byte> code,uint v){code.AddRange(BitConverter.GetBytes(v));}
+    static int Export(Type hook,string name){return (int)hook.GetMethod("ExportRva",Any).Invoke(null,new object[]{name});}
+    static void Put(IntPtr where,params byte[] bytes){Marshal.Copy(bytes,0,where,bytes.Length);}
+    static void Query(IntPtr state,string value){Clear(Plus(state,308),64);byte[] text=System.Text.Encoding.ASCII.GetBytes(value);Marshal.Copy(text,0,Plus(state,308),text.Length);}
+    static void DirectCase(Type catalog,Type hook,IntPtr wallet)
+    {
+        IntPtr module=Allocate(0x1e60000),branch=Allocate(0x2000);
+        try{
+            IntPtr state=Plus(wallet,0x38000),screen=Plus(module,0x1000),finder=Plus(module,0x2000),discoverer=Plus(module,0x3000),observed=Plus(module,0x4000),menu=Plus(module,0x7000),control=Plus(module,0x8100);
+            Clear(state,3784);Marshal.WriteInt32(state,unchecked((int)0x3849554e));Marshal.WriteInt32(state,4,1);Marshal.WriteInt32(state,8,3784);
+            Marshal.WriteInt32(screen,unchecked((int)(U(module)+0x1d4db14)));Marshal.WriteInt32(screen,0x264,finder.ToInt32());Marshal.WriteInt32(Plus(module,0x1e5147c),screen.ToInt32());
+            Marshal.WriteInt32(finder,4,discoverer.ToInt32());Marshal.WriteInt32(discoverer,unchecked((int)(U(module)+0x1d69be0)));
+            Marshal.WriteInt32(Plus(module,0x1d69be0+0x18),Plus(module,0x5000).ToInt32());Marshal.WriteInt32(Plus(module,0x1d69be0+0x1c),Plus(module,0x6000).ToInt32());
+            var directStub=new List<byte>(new byte[]{0x8b,0x44,0x24,0x04,0x8b,0x50,0x04,0x89,0x15});Imm(directStub,U(observed));directStub.AddRange(new byte[]{0x0f,0xb7,0x50,0x02,0x89,0x15});Imm(directStub,U(observed)+4);directStub.AddRange(new byte[]{0xff,0x05});Imm(directStub,U(observed)+8);directStub.AddRange(new byte[]{0xc2,0x04,0x00});Put(Plus(module,0x5000),directStub.ToArray());
+            var fallback=new List<byte>(new byte[]{0xff,0x05});Imm(fallback,U(observed)+12);fallback.Add(0xc3);Put(Plus(module,0x6000),fallback.ToArray());
+            Marshal.WriteInt32(menu,unchecked((int)(U(module)+0x1d45bac)));Marshal.WriteInt32(menu,0x26c,Plus(module,0x8000).ToInt32());Marshal.WriteInt32(menu,0x270,control.ToInt32());Marshal.WriteInt32(control,4,1);
+            Put(Plus(module,0x9c76e0),0x8b,0x44,0x24,0x08,0xff,0x48,0x04,0xc2,0x08,0x00);
+            var dispatch=(Tick)Marshal.GetDelegateForFunctionPointer(Plus(wallet,0x2000+Export(hook,"NativeLanDispatch")),typeof(Tick));
+            var begin=(BeginDirect)Marshal.GetDelegateForFunctionPointer(Plus(wallet,0x2000+Export(hook,"NativeLanBeginDirect")),typeof(BeginDirect));
+            var parse=(ParseIPv4)Marshal.GetDelegateForFunctionPointer(Plus(wallet,0x2000+Export(hook,"NativeLanIPv4")),typeof(ParseIPv4));
+            IntPtr text=Plus(module,0x9000),destination=Plus(module,0x9100);
+            foreach(string invalid in new[]{"","1.2.3","256.2.3.4","0.2.3.4","224.2.3.4","1.2.3.4:6529","host.example","1.2.3.4x","1..3.4","-1.2.3.4"}){
+                Clear(text,128);byte[] ascii=System.Text.Encoding.ASCII.GetBytes(invalid);Put(text,ascii);Check(parse(text,destination)==0,"IPv4 rejected "+invalid);
+            }
+            Put(text,System.Text.Encoding.ASCII.GetBytes("203.0.113.7\0"));Check(parse(text,destination)==1,"IPv4 accepted");Check(Marshal.ReadInt16(destination)==2&&Marshal.ReadByte(destination,2)==0x19&&Marshal.ReadByte(destination,3)==0x81&&Marshal.ReadByte(destination,4)==203&&Marshal.ReadByte(destination,7)==7,"sockaddr network encoding");
+            dispatch(U(module),finder,state);Check(Marshal.ReadInt32(observed,12)==1,"inactive discovery uses original callback");
+            Query(state,"203.0.113.7");Check(begin(U(module),menu,state)==1,"explicit address begins native browser");Check(Marshal.ReadInt32(control,4)==1,"original click consumes retained control");
+            dispatch(U(module),finder,state);Check(Marshal.ReadInt32(observed,8)==1&&Marshal.ReadInt32(observed)==0x077100cb&&Marshal.ReadInt32(observed,4)==0x8119,"direct callback receives requested sockaddr");
+            Marshal.WriteInt32(screen,0x264,0);dispatch(U(module),finder,state);Check(Marshal.ReadInt32(observed,12)==2,"foreign finder uses original callback");Marshal.WriteInt32(screen,0x264,finder.ToInt32());
+            Query(state,"not-an-ip");Check(begin(U(module),menu,state)==0,"invalid begin refused");dispatch(U(module),finder,state);Check(Marshal.ReadInt32(observed,12)==3,"invalid attempt cancels previous target");
+            Query(state,"203.0.113.7");Check(begin(U(module),menu,state)==1,"direct attempt can restart");
+            var tick=(Tick)Marshal.GetDelegateForFunctionPointer(Plus(wallet,0x2000+Export(hook,"TickUi")),typeof(Tick));tick(U(module),screen,state);Marshal.WriteInt32(screen,0);tick(U(module),screen,state);Marshal.WriteInt32(screen,unchecked((int)(U(module)+0x1d4db14)));dispatch(U(module),finder,state);Check(Marshal.ReadInt32(observed,12)==4,"leaving browser cancels direct target");
+            object hack=catalog.GetField("NativeDirectDiscovery",Any).GetValue(null);byte[] body=Builder(hack)(U(module),U(branch));
+            Check(body[0]==0x9c&&body[1]==0x60&&body[body.Length-5]==0xe9,"discovery wrapper preservation and tail");Check(unchecked(U(branch)+(uint)body.Length+(uint)I(body,body.Length-4))==U(module)+0x110ce7d,"discovery original continuation");
+            // Execute the generated wrapper with the original ESI/finder contract.
+            Put(Plus(module,0x110ce7d),0xc3);Put(branch,body);
+            var w=new List<byte>(new byte[]{0x9c,0x60,0xbe});Imm(w,U(finder));w.Add(0xe8);Imm(w,unchecked(U(branch)-(U(branch)+0x1000+(uint)w.Count+4)));w.AddRange(new byte[]{0x61,0x9d,0xc3});Put(Plus(branch,0x1000),w.ToArray());
+            ((Run)Marshal.GetDelegateForFunctionPointer(Plus(branch,0x1000),typeof(Run)))();Check(Marshal.ReadInt32(observed,12)==5,"generated discovery wrapper dispatches original fallback");
+            Query(state,"203.0.113.7");Check(begin(U(module),menu,state)==1,"timeout attempt begins");Marshal.WriteInt32(screen,0);
+            for(int i=0;i<901;i++)tick(U(module),screen,state);
+            Marshal.WriteInt32(screen,unchecked((int)(U(module)+0x1d4db14)));dispatch(U(module),finder,state);
+            Check(Marshal.ReadInt32(state,48)==205&&Marshal.ReadInt32(observed,12)==6,"bounded direct attempt expires and restores original discovery");
+            Console.WriteLine("PASS isolated direct discovery: IPv4 parsing, sockaddr, scoped callback, fallback, cancellation and generated wrapper execution. Game peers are not simulated.");
+        }finally{VirtualFree(branch,UIntPtr.Zero,0x8000);VirtualFree(module,UIntPtr.Zero,0x8000);}
+    }
     static void Mov(List<byte> code,byte opcode,uint v){code.Add(opcode);Imm(code,v);}
     static void Store(List<byte> code,byte modrm,uint address){code.Add(0x89);code.Add(modrm);Imm(code,address);}
     static void LapCase(Func<long,long,byte[]> build,IntPtr mem,int laps,int mode,int privateRoom,int initial,int expected) {
@@ -83,7 +130,7 @@ internal static class NativePayloadCheck
     public static int Main(string[] args) {
         IntPtr wallet=IntPtr.Zero,lap=IntPtr.Zero;FieldInfo stateField=null;long saved=0;
         try { Check(IntPtr.Size==4,"fixture must run x86");Check(args.Length==1&&File.Exists(args[0]),"explicit trainer assembly path required");Assembly a=Assembly.LoadFrom(Path.GetFullPath(args[0]));Type catalog=a.GetType("InjectionCatalog",true),hook=a.GetType("NativeLobbyHook",true);stateField=hook.GetField("StateAddress",Any);saved=(long)stateField.GetValue(null);
-            wallet=Allocate(0x40000);Wallet(a,catalog,hook,wallet);lap=Allocate(0x6000);stateField.SetValue(null,(long)U(lap)+0x2000);object hack=catalog.GetField("NativeClassicLaps",Any).GetValue(null);Func<long,long,byte[]> build=Builder(hack);
+            wallet=Allocate(0x40000);Wallet(a,catalog,hook,wallet);DirectCase(catalog,hook,wallet);lap=Allocate(0x6000);stateField.SetValue(null,(long)U(lap)+0x2000);object hack=catalog.GetField("NativeClassicLaps",Any).GetValue(null);Func<long,long,byte[]> build=Builder(hack);
             LapCase(build,lap,0,0,1,2,2);LapCase(build,lap,1,0,1,2,1);LapCase(build,lap,60,0,1,2,60);LapCase(build,lap,61,0,1,2,2);LapCase(build,lap,-1,0,1,2,2);LapCase(build,lap,3,1,1,2,2);LapCase(build,lap,3,0,0,2,2);LapCase(build,lap,0,0,1,7,7);
             Console.WriteLine("PASS isolated native lap execution: default, 1, 60, invalid range, mode/private gates, original register/tail effects.");Console.WriteLine("PASS "+checks+" assertions. This does not validate the game UI, network peers, or races.");return 0;
         } catch(Exception e){Console.Error.WriteLine("FAIL "+e);return 1;}

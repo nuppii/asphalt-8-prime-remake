@@ -38,7 +38,7 @@ enum NativeUiField {
 enum NativeUiBridge {
     NUI_BRIDGE_POLICY=1, NUI_BRIDGE_DISCOVERY=2,
     NUI_BRIDGE_FRIENDS=4, NUI_BRIDGE_NICKNAME=8,
-    NUI_BRIDGE_PRIVATE=16
+    NUI_BRIDGE_PRIVATE=16, NUI_BRIDGE_DIRECT_QUERY=32
 };
 #pragma pack(push,4)
 typedef struct NativeUiEntry { char label[80]; char id[64]; } NativeUiEntry;

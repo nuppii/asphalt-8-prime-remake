@@ -375,6 +375,8 @@ internal static class InjectionCatalog
             bytes.AddRange(Raw("61 9D 83 C6 28 83 7E 14 10"));
             bytes.AddRange(Jmp(cave+bytes.Count,module+0x96DBA6));return bytes.ToArray();
         });
+    internal static readonly InjectionHack NativeDirectDiscovery = new InjectionHack("Native Direct Discovery",
+        0x110CE75,"8B 4E 04 8B 01 FF 50 1C",NativeLobbyHook.BuildDiscovery);
     private static readonly Dictionary<string, int> Values = new Dictionary<string, int>
     {
         { "Credits", 10000000 }, { "Nitro Ratio", BitConverter.ToInt32(BitConverter.GetBytes(8.0f), 0) },
@@ -1175,6 +1177,8 @@ internal static class InjectionCatalog
 
 internal static class NativeInjectionEngine
 {
+    internal static bool NativeDirectDiscoveryReady(int pid)
+    {return allocationProcessId==pid&&Allocations.ContainsKey("Native Direct Discovery");}
     private static int allocationProcessId;
     private static int driverNameProcessId;
     private static int walletProcessId;

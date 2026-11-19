@@ -39,6 +39,7 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 | Joining and racing across different PCs | Not verified |
 | Directory search by room name | Backend exact/prefix matching and duplicate choices tested; native query `A` produced the service's zero-match result |
 | Native LAN join by name | Original browser entry, bounded timeout and Back observed; successful room joining not verified |
+| Native direct IPv4 action | Installed native action and invalid-input handling exercised; scoped directed-discovery helper/wrapper passed an isolated x86 fixture; successful remote discovery/join not verified |
 | Connection URL and keyboard entry | Native controls implemented; saved URL restores and can be cleared |
 | Password entry and custom room policies | Native controls implemented; private native authentication and policy enforcement pending |
 | Fill with AI policy bridge | Installed build without Frida: ON populated six AI, native Remove AI removed them and saved OFF; restoring ON populated a fresh room |
@@ -117,6 +118,8 @@ Native NetworkServer::Start VA `0xD6D200` rejects more than 12 participants at `
 See [native UI resource research](NATIVE-MULTIPLAYER-RESEARCH.md) for original screen and artwork references. No extracted game artwork or complete game binaries are distributed.
 
 ## Hosting and migration work
+
+The target is a player-hosted race, with no mandatory dedicated server or VPS. Direct address/invitation joining must remain independent of the optional public directory. See [player-hosted Internet races](INTERNET-HOSTING.md) for the connectivity boundary, the new bounded STUN socket diagnostic and the native pause/transfer/resume requirements. The diagnostic is not connected to game sockets and does not enable Internet-ready room status.
 
 The public directory only advertises room endpoints. It does not host gameplay, open router ports or relay traffic. Deployment still needs a selected reachable HTTPS host; see [the directory guide](../directory/README.md).
 

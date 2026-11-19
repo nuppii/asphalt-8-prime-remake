@@ -69,3 +69,15 @@ Original x86 executable preferred base is 0x400000. These addresses are static p
 Original poster formatting string references occur near preferred VAs 0xf5b80c, 0xf5b966, 0xf5bbdc, 0xf5bd33, 0xf5bfac and 0xf5c106, followed by native formatting helper 0x12a4de0. `multiplayer_menu/template_mp_track_poster` has a raw immediate reference near 0xa0b76d; `m_locationPoster` near 0xe98941. The latter reference boundaries need containing-function disassembly before using them as code hooks.
 
 Original executable SHA-256: `6a5d3933f92809297631f1299c9906ec40fbb9d585a8c77115f321bfe733134c`.
+
+## Directed native discovery and Internet endpoint boundary
+
+Static analysis of that same original image identifies a narrow periodic Finder call at preferred VA `0x150CE75`: `8B 4E 04 8B 01 FF 50 1C`. ESI is the Finder. Continuation `0x150CE7D` stores EDI/EBX into its last-send timer and then runs the normal epilogue. No returned EAX/EDX/flags are consumed in that continuation; the wrapper preserves general registers, flags and floating-point state.
+
+The Discoverer vtable is `0x2169BE0`. Default discovery method `0x14FD410` simply invokes its own virtual +0x18 (`0x14FD1C0`) with its default sockaddr at Discoverer+0x28. The directed method takes a pointer to 128-byte sockaddr storage and returns with RET 4. Native room refresh independently uses that method at `0x150E21F` with Room+0x80 and destination port 6529. Directed discovery therefore reuses the original query/filter protocol rather than reconstructing it. Its current socket constructor selects AF_INET; IPv6 STUN support does not establish native IPv6 support.
+
+The directed implementation scopes that call to the explicitly requested active browser Finder. It does not change a default destination, virtual table or global sendto call. Address storage remains owned by the adapter throughout the native callback. Normal discovery resumes after cancellation, expiry, browser exit or join dispatch.
+
+Room+0x80 contains the observed reply sender. The parser `0x14FC890` copies the datagram sender into a discovery record at `0x14FCB97–0x14FCBA8`; GetResult `0x14FCEF0` returns that sockaddr; Finder `0x150C820` passes it to the Room constructor, and `0x15117A0` copies it to Room+0x80. Matching AF_INET and the IPv4 bytes at Room+0x84 prevents unrelated stale LAN rows from being autojoined. Multiple native rooms can share an IP, so ambiguity remains a manual choice. A sender IP is not cryptographic authentication.
+
+Discovery port 6529 is only the first endpoint. Host lobby transport requests port zero and stores its actual bound port at Room+0x78 (`0x150DF64`). Direct native Join `0x150D940` replaces the sender sockaddr's port with that lobby port. After NetworkServer starts, callback `0x150ECE0` stores the bound race port at Room+0x7A (`0x150ED06`) and advertises it. Those separate endpoints and the native start/ready handshake must survive NAT routing before an Internet race can work. No native checkpoint import, transport rebind or pause/resume migration contract has been established by this discovery analysis.

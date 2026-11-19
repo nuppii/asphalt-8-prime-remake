@@ -60,6 +60,14 @@ The Fill with AI bridge calls the original callback at preferred image VA `0xE99
 
 See [multiplayer status and test commands](MULTIPLAYER.md) for the implementation boundaries and reproducible checks.
 
+## Player-hosted Internet foundation
+
+The native direct-discovery build has SHA-256 `72d3c48f060d727fc78ee7c22ebd498f3a4c2c221f4b989a4fd222f8218b2483` and passed 1,383 isolated native assertions, including 623 HIGHLOW relocations. New checks execute the actual direct-discovery helper and wrapper in owned memory with stubbed original callbacks: IPv4 validation/encoding, scoped direct versus default dispatch, foreign-Finder fallback, invalid-input cancellation, leaving the browser and 900-tick expiry. These fixtures open no game process.
+
+The installed build was restarted without Frida. Its native IPv4 action appeared enabled, empty input was refused, native keyboard confirmation accepted the literal `A`, and the direct action rejected that invalid address. The test query was cleared afterward; saved policies, Grid 20, Laps 3 and ASPHALT8 room name remained unchanged. The original room browser also opened without a crash with the new hook installed. These checks do not establish successful directed discovery or a remote native join.
+
+The separate STUN fixture passed 88 codec/socket assertions and exercised 1,000 arbitrary bounded attribute streams. It covers IPv4/IPv6 XOR mappings, malformed/truncated responses, transaction/source checks, independent CRC verification, same-socket retries and timeout restoration. Nineteen directory/social integration tests passed after the library addition; nine social tests passed again after native readiness-gate integration. No public STUN provider was contacted, public directory deployed or Windows/router networking configuration changed. See [player-hosted Internet status](INTERNET-HOSTING.md) for the separate native transport and race handover work.
+
 ## In-Game Mutators
 
 The compiled native entry was exercised in a fixture for both player and bot targets. For the six non-airborne controls, the fixture checked 0×, 0.01×, 1×, 5× and 100× settings, plus disabled pass-through. These checks cover the calculation paths, including their numeric bounds; they do not substitute for observing every effect across game events.
