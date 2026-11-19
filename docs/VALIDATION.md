@@ -38,6 +38,26 @@ The latest recorded automated checks passed 19 directory/social Python tests, si
 
 The installed build also passed an isolated x86 fixture with 1,281 assertions, including 585 image relocations, native UI early-return guards, and execution of generated lap code for Default, 1, 60, invalid ranges and private/Classic guards. The fixture owns all executed memory and does not open the game. Final native action buttons no longer retain automatic selection; policy highlights follow requested ON/OFF values. The temporary local service was disconnected and stopped after testing.
 
+## Isolated two-instance LAN and AI-policy checks
+
+Two independent UWP package identities were prepared with separate Host/Client folders and app-container data. Resources were copied into each package, approximately 3.2 GB per instance. An initial resource junction setup was unreadable inside the app container and caused a startup access violation at `0x105B90E`; actual copies resolved the failure. Optional copied save seeds did not establish imported progress: the observed games started with fresh profiles, zero currency and one Dodge. Source game files and source user data were read-only inputs. Game assets remain outside this repository.
+
+| Check | Observation |
+| --- | --- |
+| Explicit-PID harness | Signature, target-thread suspension and x86 context checks passed on both isolated processes; native Create/Join navigation worked without a crash |
+| Native identities | Host and Client had different native player IDs |
+| Native room creation | Host created a real eight-slot room and bound UDP 6529 |
+| Multicast discovery | Client send to `224.0.0.1:6529` failed with error 10065 from Frida call-context `lastError` |
+| Diagnostic correction | Earlier explicit `WSAGetLastError` readback of zero was invalid and was discarded |
+| Temporary unicast diagnostic | Client recorded 21 successful sends to `127.0.0.1:6529`; Host observed no received discovery packet, and no native join occurred |
+| Fill with AI bridge | Instrumented isolated-game ON added six AI and OFF removed them; manual original-control use updated the requested bit and returned success |
+| Clean installed AI check | Without Frida, saved ON populated six AI; original Remove AI removed them, persisted Policy 4 and showed OFF in Room Options; restoring ON persisted Policy 20 and populated a fresh room |
+| Latest compiled payload | Isolated native fixture passed 1,321 assertions and 605 relocations; nine social tests passed |
+
+The unicast target was a temporary diagnostic, not a shipped fix. Microsoft's [Sockets and network isolation documentation](https://learn.microsoft.com/en-us/windows/uwp/networking/sockets) makes app-container policy a plausible explanation for same-machine communication failure; packet loss due to that policy was not directly established. No loopback exemption, firewall rule or other OS networking setting was changed. Manual exemption commands were declined, and both isolated test games were closed afterward.
+
+The Fill with AI bridge calls the original callback at preferred image VA `0xE99D10` (RVA `0xA99D10`). The clean installed-build check used launcher SHA-256 `8be5f826869e5a43554ca45297f84ba1b55712bfeecc4d451903a62d21e8576e`, with no Frida session attached. The saved Grid 20, Laps 3 and room name ASPHALT8 were retained; the initial AI ON preference was restored. The HUD remained at 14,651 credits, 100 tokens, 2,000 fusion coins and 24 stars throughout these lobby checks. Launch remained disabled with one human. These observations do not establish successful native joining, peer reachability, synchronized racing, enforcement of all policies, 60-human grids or native host migration. Preparation and harness usage are documented in [the native LAN test guide](../tools/native-lan-test/README.md).
+
 See [multiplayer status and test commands](MULTIPLAYER.md) for the implementation boundaries and reproducible checks.
 
 ## In-Game Mutators

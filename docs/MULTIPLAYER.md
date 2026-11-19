@@ -41,6 +41,7 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 | Native LAN join by name | Original browser entry, bounded timeout and Back observed; successful room joining not verified |
 | Connection URL and keyboard entry | Native controls implemented; saved URL restores and can be cleared |
 | Password entry and custom room policies | Native controls implemented; private native authentication and policy enforcement pending |
+| Fill with AI policy bridge | Installed build without Frida: ON populated six AI, native Remove AI removed them and saved OFF; restoring ON populated a fresh room |
 | Default / 1–60 grid and lap controls | Requested settings persist; lap code passes an isolated x86 fixture; native race behavior remains unverified |
 | 60 human racers | Native server start rejects counts above 12; layout has eight visible entries |
 | Automatic native race-host migration | Not implemented |
@@ -50,6 +51,18 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 
 The solo grid patch does not establish 60-player network support. Native count, memory layout and serialization changes require separate work.
 
+## Two-instance native LAN test
+
+The [explicit-PID harness](../tools/native-lan-test/README.md) was applied successfully to two separately registered UWP identities on one PC. Hook signatures, suspension and x86 thread-context checks passed for both. Actual native Create/Join navigation then worked without a crash. Preparation uses independent `Host` and `Client` resource copies, approximately 3.2 GB each; no game assets are distributed. Source game files and source user data are read-only inputs. An initial app-container resource-access failure with junctions was resolved by real copies. Copied save seeds did not carry progress into the observed new identities: both started fresh with zero currency and one Dodge.
+
+Host and Client had different native player IDs. Host created an eight-slot room and bound UDP 6529. Client multicast discovery to `224.0.0.1:6529` failed with error 10065, confirmed through Frida's call-context `lastError`. An earlier explicit `WSAGetLastError` probe reported zero incorrectly and was discarded. A temporary unicast diagnostic to `127.0.0.1:6529` recorded 21 successful sends, but Host received no discovery packet and no native join occurred. This diagnostic is not a shipped networking solution.
+
+Microsoft describes same-machine Windows-app socket restrictions in [Sockets and network isolation](https://learn.microsoft.com/en-us/windows/uwp/networking/sockets). Network-isolation policy is a plausible explanation, not a confirmed diagnosis of where these packets were dropped. No loopback exemption, firewall rule or other OS networking setting was changed; manual exemption commands were declined. Both isolated games were closed after testing. The production test instance is separate from those copies.
+
+The native Fill with AI bridge invokes the original button callback at preferred image VA `0xE99D10` (RVA `0xA99D10`). After the isolated runtime check, the installed build was restarted and tested without Frida: saved ON populated six AI, the original Remove AI button removed them and persisted OFF, and Room Options showed OFF on return. Restoring ON populated six AI in a fresh room. The original Grid 20, Laps 3 and room name ASPHALT8 were preserved. This targeted behavior does not enforce the other requested policies or expand native human capacity. Launch remains disabled with only one human.
+
+![Installed native host lobby with six AI](images/native-ai-lobby.jpg)
+
 ## Native social bridge
 
 Connection configures an optional directory URL. The managed bridge registers an opaque identity, saves separate DPAPI-protected credentials for the current Windows user, and performs registration, presence heartbeats and social requests in the background. A nickname remains a display name; it does not replace the stable player ID.
@@ -58,7 +71,7 @@ Friends are added by player ID and require explicit acceptance. Separate native 
 
 The bridge fixture tests the actual managed implementation against a real loopback social service with simulated game shared memory. It covers protected identity persistence, stale-process handling and disposal. A separate clean-build game session without Frida verified the native friend acceptance, presence and invitation actions listed above. These tests used owned local identities, with no external contacts.
 
-The native LAN helper is linked and called before the local-room filter. Its browser entry and no-match timeout path were exercised on one PC. No external room was available, so successful joining remains unverified. The final rebuild also kept asynchronous friend rows in their intended order and reset requested grid/lap values from 1 back to Default, with matching saved-profile readback.
+The native LAN helper is linked and called before the local-room filter. Its earlier browser-entry and no-match timeout check used one game instance; the later two-identity discovery test is recorded above. Successful joining remains unverified. The final rebuild also kept asynchronous friend rows in their intended order and reset requested grid/lap values from 1 back to Default, with matching saved-profile readback.
 
 ## Experimental room-control service
 
@@ -87,7 +100,7 @@ The build compiles the library and test executables, including the exact managed
 
 The latest recorded checks passed 19 directory/social Python tests and six native-resource tests, plus the room selftest, lobby migration test and invitation selftest. Passing these checks does not establish a synchronized native race.
 
-The isolated x86 payload fixture passed 1,281 assertions against the installed build, including 585 relocations, native UI early-return guards, and actual execution of generated lap code for Default, 1, 60, invalid ranges and private/Classic guards. It runs only in its own allocated memory and never opens the game process. The fixture does not validate event layout, race synchronization or peers.
+The latest compiled native payload passed an isolated x86 fixture with 1,321 assertions and 605 relocations; nine social tests also passed. Earlier installed-build checks covered native UI early-return guards and actual execution of generated lap code for Default, 1, 60, invalid ranges and private/Classic guards. The fixture runs only in its own allocated memory and never opens the game process. It does not validate event layout, race synchronization or peers; the clean installed-build AI-fill check above covers lobby population and saved-state synchronization only.
 
 ## Native implementation evidence
 

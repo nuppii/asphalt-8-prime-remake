@@ -101,7 +101,7 @@ internal sealed class NativeLobbyBridge : IDisposable
             Text(212,64,profile.RoomName);Text(276,32,profile.Nickname);
             Text(436,1024,profile.DirectoryUrl);
             Word(44,8); // Nickname uses the existing verified native name command.
-            Status("Room options are saved locally. Native race rules are not connected yet.");
+            Status("Native AI fill is linked. Other room rules are still pending.");
             nextHeartbeat=DateTime.MinValue;
             return;
         }
@@ -122,7 +122,7 @@ internal sealed class NativeLobbyBridge : IDisposable
                 int bits=BitConverter.ToInt32(state,32),grid=BitConverter.ToInt32(state,36),laps=BitConverter.ToInt32(state,40);
                 if(bits<0||bits>63||grid<0||grid>60||laps<0||laps>60)throw new ArgumentException("Invalid room options.");
                 profile.Policy=bits;profile.Grid=grid;profile.Laps=laps;Save();
-                Status("Saved. Native race policy enforcement is not connected yet.");
+                Status("Saved. AI fill applies in host lobbies; other room rules are pending.");
             }
             else if(request==2)Search(Read(state,308,64),pid);
             else if(request==3||request==17||request==14)Social(request,null);

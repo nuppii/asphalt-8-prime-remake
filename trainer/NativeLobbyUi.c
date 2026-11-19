@@ -4,6 +4,7 @@
  */
 #include "NativeLobbyUi.h"
 #include "NativeLanBridge.h"
+#include "NativeLobbyPolicy.h"
 
 typedef unsigned U32;
 typedef struct Pair { void *ptr; void *control; } Pair;
@@ -384,6 +385,9 @@ __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState 
     void *outer;U32 text;
     if(!module || !screen || !shared)return;
     NativeLanTick(module,screen,shared);
+    if(NativeLobbyPolicyTick(module,screen,shared)){
+        gState=shared;Request(NUI_REQUEST_POLICY,NUI_FIELD_POLICY);
+    }
     if(*(U32*)screen!=module+0x1d45bacU)return;gModule=module;
     if(!shared->magic){Zero(shared,sizeof(*shared));shared->magic=NATIVE_UI_MAGIC;shared->version=NATIVE_UI_VERSION;shared->size=sizeof(*shared);shared->policyBits=NUI_OWNED_CARS|NUI_FILL_AI;Copy(shared->roomName,"Asphalt 8 room",64);}
     if(shared->magic!=NATIVE_UI_MAGIC || shared->version!=NATIVE_UI_VERSION || shared->size<sizeof(*shared))return;
