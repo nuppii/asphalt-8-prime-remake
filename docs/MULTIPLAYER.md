@@ -40,6 +40,7 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 | Directory search by room name | Backend exact/prefix matching and duplicate choices tested; native query `A` produced the service's zero-match result |
 | Native LAN join by name | Original browser entry, bounded timeout and Back observed; successful room joining not verified |
 | Native direct IPv4 action | Installed native action and invalid-input handling exercised; scoped directed-discovery helper/wrapper passed an isolated x86 fixture; successful remote discovery/join not verified |
+| Room-search dropdown | Native expand/collapse, six real local room-control advertisements, four-row paging, FULL marker and retained selection exercised; directory-to-native joining remains disabled |
 | Connection URL and keyboard entry | Native controls implemented; saved URL restores and can be cleared |
 | Password entry and custom room policies | Native controls implemented; private native authentication and policy enforcement pending |
 | Fill with AI policy bridge | Installed build without Frida: ON populated six AI, native Remove AI removed them and saved OFF; restoring ON populated a fresh room |
@@ -65,6 +66,10 @@ The native Fill with AI bridge invokes the original button callback at preferred
 ![Installed native host lobby with six AI](images/native-ai-lobby.jpg)
 
 ## Native social bridge
+
+Find by Name now presents directory results in a collapsible native room selector. Search opens the list; selecting an entry collapses it and keeps the selection highlighted when reopened. Up to four rows are shown at once, with More Results for the second group of the existing eight-result limit. Empty/loading/unavailable/failed searches have distinct labels. New searches and confirmed query edits clear stale results and selection; late responses for an edited query are discarded. Background social checks do not overwrite the search status while this page is visible. **NATIVE JOIN UNAVAILABLE** remains disabled for selected directory results because the native directory connection adapter is not implemented.
+
+![Native room dropdown, using six owned local room-control test advertisements rather than Internet/native race sessions](images/native-room-dropdown.jpg)
 
 Connection configures an optional directory URL. The managed bridge registers an opaque identity, saves separate DPAPI-protected credentials for the current Windows user, and performs registration, presence heartbeats and social requests in the background. A nickname remains a display name; it does not replace the stable player ID.
 

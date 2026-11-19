@@ -89,6 +89,9 @@ internal sealed class NativeLobbyBridge : IDisposable
     }
     private void Word(int offset,int value){if(offset==44&&NativeInjectionEngine.NativeDirectDiscoveryReady(processId))value|=32;NativeInjectionEngine.WriteNativeLobbyState(processId,offset,BitConverter.GetBytes(value));}
     private void Status(string message){Text(52,160,message);}
+    private void SearchStatus(int code,string message){Word(48,code);Status(message);}
+    private void ClearRooms(){rooms.Clear();Word(1460,0);Word(1464,-1);}
+    private bool RoomSearchVisible(){int pid;byte[] state;return NativeInjectionEngine.ReadNativeLobbyState(out pid,out state)&&pid==processId&&BitConverter.ToInt32(state,28)==2;}
     private void Poll()
     {
         if(disposed)return;
@@ -111,7 +114,7 @@ internal sealed class NativeLobbyBridge : IDisposable
         if(sequence==handled)
         {
             if(!string.IsNullOrWhiteSpace(profile.DirectoryUrl)&&DateTime.UtcNow>=nextHeartbeat)
-            {try{Social(0,null);}catch(Exception failure){nextHeartbeat=DateTime.UtcNow.AddSeconds(15);Status(RoomErrors.Display(failure));}}
+            {try{Social(0,null);}catch(Exception failure){nextHeartbeat=DateTime.UtcNow.AddSeconds(15);if(!RoomSearchVisible())Status(RoomErrors.Display(failure));}}
             return;
         }
         int request=BitConverter.ToInt32(state,20);
@@ -153,7 +156,7 @@ internal sealed class NativeLobbyBridge : IDisposable
             {
                 string value=Read(state,436,1024).Trim();
                 if(value.Length!=0){Uri uri=new Uri(value,UriKind.Absolute);PublicRoomDirectory.Validate(uri);value=uri.AbsoluteUri;}
-                profile.DirectoryUrl=value;Save();generation++;busy=false;social=null;ClearSocial();nextHeartbeat=DateTime.MinValue;
+                profile.DirectoryUrl=value;Save();generation++;busy=false;social=null;ClearSocial();ClearRooms();Word(48,0);nextHeartbeat=DateTime.MinValue;
                 Text(436,1024,value);
                 Status(value.Length==0?"Directory cleared. Online social service disconnected.":"Directory saved. Connecting to the social service...");
             }
@@ -170,11 +173,12 @@ internal sealed class NativeLobbyBridge : IDisposable
     }
     private void Search(string query,int pid)
     {
-        if(string.IsNullOrWhiteSpace(query))throw new ArgumentException("Enter the room name first.");
+        ClearRooms();
+        if(string.IsNullOrWhiteSpace(query)){SearchStatus(306,"Enter the room name first.");return;}
         if(string.IsNullOrWhiteSpace(profile.DirectoryUrl))
-        {Word(1460,0);Status("Public directory is not configured. Use Join Room for local games.");return;}
+        {SearchStatus(303,"Public directory is not configured. Use Join Room for local games.");return;}
         Uri directory=new Uri(profile.DirectoryUrl,UriKind.Absolute);PublicRoomDirectory.Validate(directory);
-        busy=true;int expected=generation;Status("Searching for matching rooms...");
+        busy=true;int expected=generation;SearchStatus(300,"Searching for matching rooms...");
         Task.Run(()=>
         {
             List<LanRoomListing> found=null;string error=null;
@@ -182,15 +186,18 @@ internal sealed class NativeLobbyBridge : IDisposable
             lock(gate)completions.Enqueue(()=>
             {
                 if(disposed||processId!=pid||generation!=expected)return;busy=false;
-                if(error!=null){Word(1460,0);Status(error);return;}
+                int currentPid;byte[] currentState;
+                if(!NativeInjectionEngine.ReadNativeLobbyState(out currentPid,out currentState)||currentPid!=pid)return;
+                if(Read(currentState,308,64)!=query){ClearRooms();SearchStatus(306,"Search changed. Search again to refresh the list.");return;}
+                if(error!=null){ClearRooms();SearchStatus(304,error);return;}
                 rooms=found;
                 for(int i=0;i<rooms.Count;i++)
                 {
-                    Text(1480+i*144,80,rooms[i].Name+"  "+rooms[i].Players+"/"+rooms[i].Capacity);
+                    Text(1480+i*144,80,rooms[i].Name+"  "+rooms[i].Players+"/"+rooms[i].Capacity+(rooms[i].Players>=rooms[i].Capacity?"  FULL":""));
                     Text(1560+i*144,64,rooms[i].RoomId);
                 }
-                Word(1464,0);Word(1460,rooms.Count);
-                Status(rooms.Count+" matching room(s). Native joining is not connected yet.");
+                Word(1464,-1);Word(1460,rooms.Count);
+                SearchStatus(rooms.Count==0?302:301,rooms.Count==0?"No matching rooms found.":"Select a room from the list. Native directory joining is still unavailable.");
             });
         });
     }
@@ -286,10 +293,10 @@ internal sealed class NativeLobbyBridge : IDisposable
                 {
                     if(disposed||processId!=pid||generation!=expected)return;
                     busy=false;
-                    if(error!=null){Word(44,8);Status(error);return;}
+                    if(error!=null){Word(44,8);if(operation!=0||!RoomSearchVisible())Status(error);return;}
                     social=client;socialView=view;Word(44,12);
                     if(found!=null)friends=found;if(pending!=null)requests=pending;if(inbox!=null)invitations=inbox;
-                    PublishSocial(operation!=0);if(operation!=0||existing==null)Status(message);
+                    PublishSocial(operation!=0);if(operation!=0||(existing==null&&!RoomSearchVisible()))Status(message);
                 });
             }
         });

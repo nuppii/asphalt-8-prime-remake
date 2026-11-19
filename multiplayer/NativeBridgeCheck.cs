@@ -38,6 +38,20 @@ internal static class NativeBridgeCheck
             {
                 Tick(bridge);Text(436,1024,args[0]);Request(bridge,10);
                 Await(bridge,()=>Word(44)==12);
+                string searchName="Dropdown "+Guid.NewGuid().ToString("N");
+                var listing=new LanRoomListing{RoomId=Guid.NewGuid().ToString("N"),Name=searchName,Address="127.0.0.1",Port=47781,Players=4,Capacity=4};
+                using(var advertiser=new PublicRoomAdvertiser(new Uri(args[0]),()=>listing))
+                {
+                    Await(bridge,()=>PublicRoomDirectory.Search(new Uri(args[0]),searchName).Count==1);
+                    Text(308,64,searchName);Request(bridge,2);
+                    Check(Word(48)==300&&Word(1460)==0&&Word(1464)==-1,"Search did not clear old selection while loading.");
+                    Await(bridge,()=>Word(48)==301);
+                    Check(Word(1460)==1&&Word(1464)==-1&&Text(1480,80).Contains("4/4  FULL")&&Text(1560,64)==listing.RoomId,"Dropdown results or explicit-selection state differ from the directory.");
+                    Text(308,64,"No match "+Guid.NewGuid().ToString("N"));Request(bridge,2);Await(bridge,()=>Word(48)==302);
+                    Check(Word(1460)==0&&Word(1464)==-1,"Empty search kept a stale room selection.");
+                    Text(308,64,searchName);Request(bridge,2);Text(308,64,"Changed while searching");Await(bridge,()=>Word(48)==306);
+                    Check(Word(1460)==0&&Word(1464)==-1,"Stale query completion repopulated the dropdown.");
+                }
                 Request(bridge,3);Await(bridge,()=>Text(52,160).Contains("Your player ID:"));
                 localId=Text(52,160).Split(new[]{"Your player ID: "},StringSplitOptions.None)[1];
                 Text(308,64,peer.PlayerId);Request(bridge,11);Await(bridge,()=>Text(52,160).Contains("Friend request sent"));
@@ -74,6 +88,11 @@ internal static class NativeBridgeCheck
                 Text(436,1024,"");Request(again,10);
                 Check(Word(44)==8&&Word(1468)==0&&Text(436,1024)=="","Disconnect did not clear social readiness and results.");
                 Request(again,3);Check(Text(52,160).Contains("Configure a directory URL"),"Cleared directory was still used.");
+                Text(308,64,"Test room");Request(again,2);Check(Word(48)==303&&Word(1460)==0&&Word(1464)==-1,"Unavailable directory retained dropdown results.");
+                Text(436,1024,args[0].TrimEnd('/')+"/missing");Request(again,10);Word(28,2);Text(52,160,"Room list status stays visible.");Word(48,301);
+                Tick(again);Await(again,()=>!(bool)typeof(NativeLobbyBridge).GetField("busy",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(again));
+                Check(Text(52,160)=="Room list status stays visible."&&Word(48)==301,"Background social failure overwrote the room-search status.");
+                Text(436,1024,"");Request(again,10);
             }
             File.WriteAllText(Path.Combine(folder,"native-profile.json"),"{\"Policy\":20,\"Grid\":0,\"Laps\":0,\"RoomName\":\"Test\",\"Nickname\":\"Driver\",\"DirectoryUrl\":\"https://[broken\"}");
             using(var malformed=new NativeLobbyBridge(folder,false)){Tick(malformed);Check(Text(436,1024)=="","Malformed persisted URL was not reset safely.");}

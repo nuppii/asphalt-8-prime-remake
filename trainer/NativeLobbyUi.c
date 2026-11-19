@@ -26,7 +26,7 @@ typedef void (__cdecl *BindCall)(void);
 enum { A_PAGE=1, A_TOGGLE, A_GRID, A_LAPS, A_EDIT, A_FIND, A_FRIENDS,
        A_KEY, A_SPACE, A_DELETE, A_CANCEL, A_CONFIRM,
        A_SELECT_ROOM,A_JOIN_ROOM,A_SELECT_FRIEND,A_INVITE_FRIEND,
-       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN };
+       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN,A_ROOM_LIST };
 enum { E_ROOM=1,E_QUERY=2,E_NICKNAME=3,E_PASSWORD=4,E_DIRECTORY=5,E_FRIEND_ID=6 };
 typedef struct Control {
     Pair visual, button, connection;
@@ -45,6 +45,7 @@ static U32 gNamespacesLoaded;
 static U32 gLayoutDirty;
 static U32 gLowercase,gResultOffset;
 static U32 gLaunchLan;
+static U32 gRoomsExpanded;
 
 void * __cdecl memset(void *p,int value,unsigned count);
 #pragma function(memset)
@@ -180,7 +181,7 @@ static void ResetRoot(void) {
     DropPair(&gKeyboard);DropPair(&gCenter);DropPair(&gRootPair);DropPair(&gPanel);
     DropPair(&gHostCenter);DropPair(&gSceneRoot);
     for(i=0;i<gCount;++i)DropConnection(&gControls[i].connection);
-    Zero(gControls,sizeof(gControls));gCount=0;gKeyboardAttempt=0;gBuildFailures=0;gEdit=0;gKeyboardAttached=0;
+    Zero(gControls,sizeof(gControls));gCount=0;gKeyboardAttempt=0;gBuildFailures=0;gEdit=0;gKeyboardAttached=0;gRoomsExpanded=0;
 }
 static void Build(void) {
     U32 i;
@@ -201,6 +202,7 @@ static void Build(void) {
     Button(NUI_FIND,A_EDIT,E_QUERY,"");Button(NUI_FIND,A_FIND,0,"SEARCH DIRECTORY");
     Button(NUI_FIND,A_LAN_JOIN,0,"JOIN LAN BY NAME");
     Button(NUI_FIND,A_DIRECT_JOIN,0,"JOIN BY IPV4 ADDRESS");
+    Button(NUI_FIND,A_ROOM_LIST,0,"ROOMS: SEARCH TO LIST GAMES");
     for(i=0;i<8;++i)Button(NUI_FIND,A_SELECT_ROOM,i,"");
     Button(NUI_FIND,A_RESULT_PAGE,0,"MORE RESULTS");
     Button(NUI_FIND,A_JOIN_ROOM,0,"JOIN SELECTED ROOM");
@@ -285,11 +287,12 @@ static void Click(Control *c) {
     case A_GRID:gState->grid=gState->grid>=60?0:gState->grid+1;Request(NUI_REQUEST_POLICY,NUI_FIELD_GRID);break;
     case A_LAPS:gState->laps=gState->laps>=60?0:gState->laps+1;Request(NUI_REQUEST_POLICY,NUI_FIELD_LAPS);break;
     case A_RESET_RACE:gState->grid=0;gState->laps=0;Request(NUI_REQUEST_POLICY,NUI_FIELD_GRID|NUI_FIELD_LAPS);break;
-    case A_FIND:gResultOffset=0;Request(NUI_REQUEST_FIND,NUI_FIELD_QUERY);break;
+    case A_FIND:gResultOffset=0;gRoomsExpanded=1;Request(NUI_REQUEST_FIND,NUI_FIELD_QUERY);break;
+    case A_ROOM_LIST:gRoomsExpanded=!gRoomsExpanded;gLayoutDirty=1;break;
     case A_LAN_JOIN:gLaunchLan=1;break;
     case A_DIRECT_JOIN:if(gState->bridgeFlags&NUI_BRIDGE_DIRECT_QUERY)gLaunchLan=2;break;
     case A_FRIENDS:gResultOffset=0;Request(NUI_REQUEST_FRIENDS,0);break;
-    case A_SELECT_ROOM:if(c->value<gState->roomCount && c->value<8)gState->selectedRoom=c->value;break;
+    case A_SELECT_ROOM:if(c->value<gState->roomCount && c->value<8){gState->selectedRoom=c->value;gRoomsExpanded=0;gLayoutDirty=1;}break;
     case A_JOIN_ROOM:if(gState->selectedRoom<gState->roomCount && gState->selectedRoom<8)Request(NUI_REQUEST_JOIN_SELECTED,0);break;
     case A_SELECT_FRIEND:if(c->value<gState->friendCount && c->value<8)gState->selectedFriend=c->value;break;
     case A_INVITE_FRIEND:if(gState->selectedFriend<gState->friendCount && gState->selectedFriend<8)Request(NUI_REQUEST_FRIEND_INVITE,0);break;
@@ -305,6 +308,7 @@ static void Click(Control *c) {
     case A_DELETE:n=Len(gEditText,sizeof(gEditText));if(n){--n;while(n && ((unsigned char)gEditText[n]&0xc0)==0x80)--n;gEditText[n]=0;}break;
     case A_CANCEL:gState->page=gReturnPage;gEdit=0;break;
     case A_CONFIRM:dst=EditTarget(&cap);Copy(dst,gEditText,cap);
+        if(gEdit==E_QUERY){gState->roomCount=0;gState->selectedRoom=~0U;gState->statusCode=0;gState->statusText[0]=0;gRoomsExpanded=0;gResultOffset=0;gLayoutDirty=1;}
         field=gEdit==E_ROOM?NUI_FIELD_ROOM_NAME:gEdit==E_QUERY?NUI_FIELD_QUERY:gEdit==E_PASSWORD?NUI_FIELD_PASSWORD:NUI_FIELD_NICKNAME;
         kind=gEdit==E_DIRECTORY?NUI_REQUEST_DIRECTORY:gEdit==E_FRIEND_ID?NUI_REQUEST_ADD_FRIEND:gEdit==E_ROOM?NUI_REQUEST_ROOM_NAME:gEdit==E_QUERY?NUI_REQUEST_NONE:gEdit==E_PASSWORD?NUI_REQUEST_PASSWORD:NUI_REQUEST_NICKNAME;
         if(kind)Request(kind,field);gState->page=gReturnPage;gEdit=0;break;
@@ -331,9 +335,9 @@ static void Refresh(void) {
         else if(c->action==A_SELECT_FRIEND)Selection(c,c->value==gState->selectedFriend && c->value<gState->friendCount);
         if(c->visual.ptr){
             U32 wanted=c->page==page || (c->page==99 && page!=NUI_KEYBOARD && page!=NUI_MAIN);
-            if(c->action==A_SELECT_ROOM)wanted=wanted && c->value<gState->roomCount && c->value>=gResultOffset && c->value<gResultOffset+4 && c->value<8;
+            if(c->action==A_SELECT_ROOM)wanted=wanted && gRoomsExpanded && c->value<gState->roomCount && c->value>=gResultOffset && c->value<gResultOffset+4 && c->value<8;
             if(c->action==A_SELECT_FRIEND)wanted=wanted && c->value<gState->friendCount && c->value>=gResultOffset && c->value<gResultOffset+4 && c->value<8;
-            if(c->action==A_RESULT_PAGE)wanted=wanted && (page==NUI_FIND?gState->roomCount:gState->friendCount)>4;
+            if(c->action==A_RESULT_PAGE)wanted=wanted && (page!=NUI_FIND||gRoomsExpanded) && (page==NUI_FIND?gState->roomCount:gState->friendCount)>4;
             if(wanted!=c->attached){
                 if(wanted)((PairArg)Api(0x14684c0))(gRoot,0,&c->visual);
                 else ((PairArg)Virtual(gRoot,0xe8))(gRoot,0,&c->visual);
@@ -351,11 +355,21 @@ static void Refresh(void) {
             if(c->value<count && c->value<8){Copy(text,selected==c->value?"> ":"",sizeof(text));Append(text,entries[c->value].label,sizeof(text));Label(c,text);}continue;}
         if(c->action==A_JOIN_ROOM)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY) && gState->selectedRoom<gState->roomCount && gState->selectedRoom<8);
         if(c->action==A_DIRECT_JOIN)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DIRECT_QUERY)!=0);
+        if(c->action==A_ROOM_LIST)Enabled(c->button.ptr,gState->roomCount>0 && gState->statusCode!=300);
         if(c->action==A_INVITE_FRIEND)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS) && gState->selectedFriend<gState->friendCount && gState->selectedFriend<8);
         if(c->action==A_REQUEST)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS) && gState->selectedFriend<gState->friendCount && gState->selectedFriend<8);
         if(c->action==A_COPY_ID)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS)!=0);
         text[0]=0;
-        if(c->action==A_TOGGLE){prefix=c->value==NUI_MUTATORS?"Mutators":c->value==NUI_CHEATS?"Cheats":c->value==NUI_OWNED_CARS?"Owned cars required":c->value==NUI_IGNORE_CLASS?"Ignore class":c->value==NUI_FILL_AI?"Fill empty slots with AI":"Private room";Copy(text,prefix,sizeof(text));Append(text,gState->policyBits&c->value?": ON":": OFF",sizeof(text));}
+        if(c->action==A_ROOM_LIST){
+            if(gState->statusCode==300)Copy(text,"ROOMS: SEARCHING...",sizeof(text));
+            else if(gState->roomCount){
+                Copy(text,gRoomsExpanded?"[-] ":"[+] ",sizeof(text));
+                if(gState->selectedRoom<gState->roomCount && gState->selectedRoom<8)Append(text,gState->rooms[gState->selectedRoom].label,sizeof(text));
+                else {Number(num,gState->roomCount);Append(text,num,sizeof(text));Append(text," ROOMS - SELECT A GAME",sizeof(text));}
+            }else Copy(text,gState->statusCode==302?"ROOMS: NO MATCHES":gState->statusCode==303?"ROOMS: CONNECTION UNAVAILABLE":gState->statusCode==304?"ROOMS: SEARCH FAILED":"ROOMS: SEARCH TO LIST GAMES",sizeof(text));
+        }
+        else if(c->action==A_JOIN_ROOM)Copy(text,gState->selectedRoom<gState->roomCount && !(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY)?"NATIVE JOIN UNAVAILABLE":"JOIN SELECTED ROOM",sizeof(text));
+        else if(c->action==A_TOGGLE){prefix=c->value==NUI_MUTATORS?"Mutators":c->value==NUI_CHEATS?"Cheats":c->value==NUI_OWNED_CARS?"Owned cars required":c->value==NUI_IGNORE_CLASS?"Ignore class":c->value==NUI_FILL_AI?"Fill empty slots with AI":"Private room";Copy(text,prefix,sizeof(text));Append(text,gState->policyBits&c->value?": ON":": OFF",sizeof(text));}
         else if(c->action==A_GRID || c->action==A_LAPS){U32 value=c->action==A_GRID?gState->grid:gState->laps;Copy(text,c->action==A_GRID?"Grid: ":"Laps: ",sizeof(text));if(!value)Append(text,"Default",sizeof(text));else{Number(num,value);Append(text,num,sizeof(text));}}
         else if(c->action==A_EDIT && c->value<=E_NICKNAME){prefix=c->value==E_ROOM?"Room name: ":c->value==E_QUERY?"Search: ":"Nickname: ";Copy(text,prefix,sizeof(text));Append(text,c->value==E_ROOM?gState->roomName:c->value==E_QUERY?gState->query:gState->nickname,sizeof(text));}
         else if(c->page==99){
