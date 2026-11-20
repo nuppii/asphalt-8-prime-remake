@@ -28,7 +28,7 @@ typedef void (__cdecl *BindCall)(void);
 enum { A_PAGE=1, A_TOGGLE, A_GRID, A_LAPS, A_EDIT, A_FIND, A_FRIENDS,
        A_KEY, A_SPACE, A_DELETE, A_CANCEL, A_CONFIRM,
        A_SELECT_ROOM,A_JOIN_ROOM,A_SELECT_FRIEND,A_INVITE_FRIEND,
-       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN,A_ROOM_LIST };
+       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN,A_ROOM_LIST,A_ROSTER_PAGE };
 enum { E_ROOM=1,E_QUERY=2,E_NICKNAME=3,E_PASSWORD=4,E_DIRECTORY=5,E_FRIEND_ID=6 };
 typedef struct Control {
     Pair visual, button, connection;
@@ -49,6 +49,12 @@ static U32 gLowercase,gResultOffset;
 static U32 gLaunchLan;
 static U32 gEditEpoch,gCaret,gSelectAll;
 static U32 gRoomsExpanded;
+enum { ROSTER_SLOTS = 8, ROSTER_PREV, ROSTER_STATUS, ROSTER_NEXT, ROSTER_CONTROLS };
+static Pair gRosterList, gRosterPanel, gRosterStock;
+static Control gRosterControls[ROSTER_CONTROLS];
+static NativeRosterSlots gRosterSlots;
+static void *gRosterSource, *gRosterScreen;
+static U32 gRosterPage, gRosterCount, gRosterVisible, gRosterNamespace, gRosterAttached;
 
 void * __cdecl memset(void *p,int value,unsigned count);
 #pragma function(memset)
@@ -134,7 +140,10 @@ static void Click(Control *c);
 /* Native event owns a by-value shared_ptr<ButtonWidget>. Release it just
  * like DC7500 does, even though we only dispatch an action identifier. */
 static void __cdecl OnClick(Control *c,Pair *argument) {
-    if(c && c->generation==gGeneration && gRoot && gState)Click(c);
+    if(c && c->action==A_ROSTER_PAGE && gRosterPanel.ptr){
+        if(c->value && (gRosterPage+1)*ROSTER_SLOTS<gRosterCount)++gRosterPage;
+        if(!c->value && gRosterPage)--gRosterPage;
+    }else if(c && c->generation==gGeneration && gRoot && gState)Click(c);
     DropPair(argument);
 }
 static __declspec(naked) void NativeClick(void) {
@@ -183,6 +192,137 @@ static void DropConnection(Pair *p) {
         if(old==1){void *fn=Virtual(ctrl,8);((Release)fn)(ctrl,0);}}
     Zero(p,sizeof(*p));
 }
+
+static void DropRoster(void)
+{
+    U32 i;
+    gRosterScreen=0;
+    if(gRosterAttached){
+        Visible(gRosterStock.ptr,1);
+        ((PairArg)Virtual(gRosterList.ptr,0xe8))(gRosterList.ptr,0,&gRosterPanel);
+    }
+    for(i=0;i<ROSTER_CONTROLS;++i)DropPair(&gRosterControls[i].button);
+    DropPair(&gRosterPanel);
+    for(i=0;i<ROSTER_CONTROLS;++i)DropConnection(&gRosterControls[i].connection);
+    DropPair(&gRosterList);DropPair(&gRosterStock);
+    Zero(gRosterControls,sizeof(gRosterControls));
+    Zero(&gRosterSlots,sizeof(gRosterSlots));
+    gRosterSource=0;gRosterPage=0;gRosterVisible=0;gRosterCount=0;gRosterAttached=0;
+}
+
+static U32 BuildRoster(void *outer)
+{
+    U32 text,i;
+    Pair row;
+    Find(outer,"player_list",&gRosterList);
+    if(!gRosterList.ptr)return 0;
+    Find(gRosterList.ptr,"Stack Container",&gRosterStock);
+    if(!gRosterStock.ptr || *(void**)((char*)gRosterStock.ptr+0x3c)!=gRosterList.ptr)return 0;
+    Find(gRosterStock.ptr,"upper_player_row",&row);
+    if(!row.ptr)return 0;
+    DropPair(&row);
+    if(!gRosterNamespace){
+        Text(&text,"offline_lobby_roster");((void (__stdcall *)(U32))Api(0xa6a280))(text);
+        gRosterNamespace=1;
+    }
+    Text(&text,"offline_lobby_roster/screen_mp_private_lobby_waitroom");
+    ((Factory)Api(0x510bb0))(&gRosterPanel,&text);DropText(&text);
+    if(!gRosterPanel.ptr)return 0;
+    for(i=0;i<ROSTER_CONTROLS;++i){
+        char name[40],num[12];
+        Pair generic;
+        Control *c=&gRosterControls[i];
+        Vec2 limit={0x447a0000U,0x40900000U};
+        if(i<ROSTER_SLOTS){Copy(name,"offline_roster_slot_",sizeof(name));Number(num,i);Append(name,num,sizeof(name));}
+        else Copy(name,i==ROSTER_PREV?"offline_roster_prev":i==ROSTER_NEXT?"offline_roster_next":"offline_roster_status",sizeof(name));
+        Find(gRosterPanel.ptr,name,&generic);
+        if(generic.ptr)((CastButton)Api(0x500890))(&c->button,&generic);
+        DropPair(&generic);
+        if(!c->button.ptr)return 0;
+        ((VecArg)Virtual(c->button.ptr,0x30))(c->button.ptr,0,&limit);
+        Momentary(c->button.ptr);
+        Enabled(c->button.ptr,0);
+        if(i==ROSTER_PREV||i==ROSTER_NEXT){
+            Delegate d;
+            c->action=A_ROSTER_PAGE;c->value=i==ROSTER_NEXT;
+            Zero(&d,sizeof(d));d.fn=NativeClick;d.object=c;
+            Bind(&c->connection,(char*)c->button.ptr+0x394,&d);
+        }
+    }
+    ((PairArg)Api(0x14684c0))(gRosterList.ptr,0,&gRosterPanel);
+    Visible(gRosterStock.ptr,0);
+    gRosterAttached=1;
+    return 1;
+}
+
+/* One page of eight visible cells; hide the unused tail on the final page. */
+__declspec(dllexport) U32 __cdecl NativeRosterPage(U32 requested,U32 humans,U32 *page)
+{
+    U32 count=requested<NATIVE_UI_MAX_RACERS+1?requested:0;
+    if(count<humans)count=humans;
+    if(*page>=(count+ROSTER_SLOTS-1)/ROSTER_SLOTS)*page=count?(count-1)/ROSTER_SLOTS:0;
+    return count;
+}
+
+static void TickRoster(U32 module,void *screen,NativeUiState *shared)
+{
+    NativeRoster roster;
+    void *outer;
+    U32 i,first,visible,layout=0,newScreen,sources[NATIVE_ROSTER_CAPACITY];
+    char label[128],num[12];
+    if(shared->magic!=NATIVE_UI_MAGIC||shared->version!=NATIVE_UI_VERSION||shared->size<sizeof(*shared)||
+       !shared->grid || shared->grid>NATIVE_UI_MAX_RACERS || !NativeReadRoster(module,screen,&roster)){
+        if(gRosterSource)DropRoster();
+        return;
+    }
+    /* WifiRoom stores its waitroom resource at +0x300 (E97044). */
+    outer=*(void**)((char*)screen+0x300);
+    if(!outer)return;
+    newScreen=gRosterSource!=outer||gRosterScreen!=screen;
+    if(newScreen)DropRoster();
+    if(!NativeAssignRoster(&roster,&gRosterSlots,sources)){
+        if(gRosterSource)DropRoster();
+        return;
+    }
+    if(newScreen){
+        gRosterSource=outer;gRosterScreen=screen;
+        if(!BuildRoster(outer)){DropRoster();gRosterSource=outer;gRosterScreen=screen;return;}
+        layout=1;
+    }
+    if(!gRosterPanel.ptr)return;
+    gRosterCount=NativeRosterPage(shared->grid,roster.humans,&gRosterPage);
+    first=gRosterPage*ROSTER_SLOTS;
+    visible=gRosterCount-first;
+    if(visible>ROSTER_SLOTS)visible=ROSTER_SLOTS;
+    if(gRosterVisible!=visible){
+        for(i=0;i<ROSTER_SLOTS;++i)Visible(gRosterControls[i].button.ptr,i<visible);
+        gRosterVisible=visible;layout=1;
+    }
+    for(i=0;i<visible;++i){
+        U32 slot=first+i;
+        Number(label,slot+1);Append(label,"  ",sizeof(label));
+        if(slot>=roster.capacity)Append(label,"UNAVAILABLE",sizeof(label));
+        else if(sources[slot]){
+            const char *name=roster.users[sources[slot]-1].name;
+            Append(label,*name?name:slot?"PLAYER":"HOST",sizeof(label));
+        }
+        else Append(label,roster.fill?"AI SLOT":"OPEN SLOT",sizeof(label));
+        Label(&gRosterControls[i],label);
+    }
+    Number(label,first+1);Append(label,"-",sizeof(label));Number(num,first+visible);Append(label,num,sizeof(label));
+    Append(label," / ",sizeof(label));Number(num,shared->grid);Append(label,num,sizeof(label));
+    if(shared->grid!=roster.capacity){
+        Append(label,"   |   ROOM CAPACITY ",sizeof(label));Number(num,roster.capacity);Append(label,num,sizeof(label));
+    }
+    Label(&gRosterControls[ROSTER_STATUS],label);
+    Enabled(gRosterControls[ROSTER_PREV].button.ptr,first!=0);
+    Enabled(gRosterControls[ROSTER_NEXT].button.ptr,first+visible<gRosterCount);
+    if(layout){
+        ((Release)Virtual(gRosterList.ptr,0xa8))(gRosterList.ptr,0);
+        ((BoolArg)Virtual(outer,0x88))(outer,0,1);
+    }
+}
+
 static void ResetRoot(void) {
     U32 i;gRoot=0;++gGeneration;
     Visible(gCenter.ptr,1);
@@ -488,6 +628,7 @@ __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState 
     if(NativeLobbyPolicyTick(module,screen,shared)){
         gState=shared;Request(NUI_REQUEST_POLICY,NUI_FIELD_POLICY);
     }
+    gModule=module;TickRoster(module,screen,shared);
     if(*(U32*)screen!=module+0x1d45bacU){NativeNetwork(shared)->editToken=0;return;}gModule=module;
     if(!shared->magic){Zero(shared,sizeof(*shared));shared->magic=NATIVE_UI_MAGIC;shared->version=NATIVE_UI_VERSION;shared->size=sizeof(*shared);shared->policyBits=NUI_OWNED_CARS|NUI_FILL_AI;Copy(shared->roomName,"Asphalt 8 room",64);}
     if(shared->magic!=NATIVE_UI_MAGIC || shared->version!=NATIVE_UI_VERSION || shared->size<sizeof(*shared))return;

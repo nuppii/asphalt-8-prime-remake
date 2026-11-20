@@ -73,8 +73,12 @@ manifest = manifest.replace(
     'Name="YoanRochat.Asphalt8Airborne480Offline"',
     1,
 )
-manifest = manifest.replace("ms-resource:AppName", "Asphalt 8: Airborne 4.8 Offline")
-manifest = manifest.replace("ms-resource:ShortName", "Asphalt 8 Offline")
+manifest = manifest.replace("ms-resource:AppName", "Asphalt 8: Airborne 4.8")
+manifest = manifest.replace("ms-resource:ShortName", "Asphalt 8")
+manifest = manifest.replace("Asphalt 8: Airborne 4.8 Offline", "Asphalt 8: Airborne 4.8")
+# Windows requires a new registration revision to refresh the visible title.
+# The package family and the supported Asphalt8.exe build stay the same.
+manifest = manifest.replace('Version="4.8.0.7"', 'Version="4.8.0.8"', 1)
 MANIFEST.write_text(manifest, encoding="utf-8", newline="\n")
 
 # Loose development registration must not consume the original package's

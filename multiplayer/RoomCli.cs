@@ -123,11 +123,76 @@ internal static class RoomCli
         // Default means the stock-event placeholder, not zero or infinite.
         var defaults=new RoomSettings{GridSlots=0,Laps=0};defaults.Validate();
         if(defaults.EffectiveGridSlots!=8||defaults.EffectiveLaps!=3)throw new Exception("Default fallback mismatch.");
-        var large=new RoomSettings{GridSlots=40,FillBots=true};large.Validate();
-        if(large.EffectiveGridSlots-20!=20)throw new Exception("Bot fill calculation mismatch.");
-        Console.WriteLine("PASS: separate-process room authentication, joins, capacity, voting, authorization, profiles, promotion, RTT, kick, leave, default and bot-fill checks.");
+        foreach (int capacity in new[] { 1, 10, 20, 60 }) VerifyRoomSlots(capacity);
+        Console.WriteLine("PASS: room authentication, voting, moderation, RTT, and TCP slot assignment and bot reservations for 1, 10, 20, and 60 slots.");
         return 0;
     }
+
+    private static RoomSnapshot WaitRoom(RoomClient host, int humans, int bots)
+    {
+        RoomSnapshot snapshot = null;
+        if (!SpinWait.SpinUntil(() =>
+        {
+            snapshot = host.Snapshot;
+            return snapshot.Members.Count == humans && snapshot.BotCount == bots;
+        }, 8000)) throw new Exception("Timed out waiting for " + humans + " players and " + bots + " bot reservations.");
+        int capacity = snapshot.Settings.EffectiveGridSlots;
+        if (snapshot.Members.Any(member => member.GridSlot < 1 || member.GridSlot > capacity) ||
+            snapshot.Members.Select(member => member.GridSlot).Distinct().Count() != humans)
+            throw new Exception("The room assigned an invalid or duplicate slot.");
+        return snapshot;
+    }
+
+    private static void VerifyRoomSlots(int capacity)
+    {
+        const string password = "full-grid-secret";
+        using (var host = RoomClient.Create("Slot test", new PlayerProfile { Nickname = "Host" },
+            new RoomSettings { GridSlots = capacity, FillBots = true }, password, 0))
+        {
+            int port = host.HostedServer.Port;
+            WaitRoom(host, 1, capacity - 1);
+            var clients = new List<RoomClient>();
+            try
+            {
+                for (int index = 1; index < capacity; ++index)
+                {
+                    var guest = RoomClient.Join("127.0.0.1", port, password,
+                        new PlayerProfile { Nickname = "Guest" + index });
+                    clients.Add(guest);
+                    var snapshot = WaitRoom(host, index + 1, capacity - index - 1);
+                    if (snapshot.Members.Single(member => member.Id == guest.LocalId).GridSlot != index + 1)
+                        throw new Exception("An arriving player did not take the next bot slot.");
+                }
+                using (var overflow = new Child("join " + port + " " + password + " Overflow"))
+                    overflow.Wait("FAIL|The room is full.");
+                if (capacity == 1) return;
+                var original = WaitRoom(host, capacity, 0).Members.ToDictionary(member => member.Id);
+                string departed = clients[0].LocalId;
+                clients[0].Dispose();
+                WaitRoom(host, capacity - 1, 1);
+                if (capacity == 10)
+                {
+                    host.UpdateSettings(new RoomSettings { GridSlots = capacity, FillBots = false });
+                    WaitRoom(host, capacity - 1, 0);
+                    host.UpdateSettings(new RoomSettings { GridSlots = capacity, FillBots = true });
+                    WaitRoom(host, capacity - 1, 1);
+                }
+                using (var replacement = RoomClient.Join("127.0.0.1", port, password,
+                    new PlayerProfile { Nickname = "Replacement" }))
+                {
+                    var members = WaitRoom(host, capacity, 0).Members;
+                    if (members.Single(member => member.Id == replacement.LocalId).GridSlot != original[departed].GridSlot ||
+                        members.Any(member => member.Id != replacement.LocalId && member.GridSlot != original[member.Id].GridSlot))
+                        throw new Exception("Replacing a bot reservation moved an existing player's slot.");
+                }
+            }
+            finally
+            {
+                foreach (RoomClient guest in clients) guest.Dispose();
+            }
+        }
+    }
+
     private static int MigrationTest()
     {
         using(var host=new Child("host 0 transfer-secret Host"))

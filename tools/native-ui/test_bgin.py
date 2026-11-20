@@ -4,7 +4,7 @@ import struct
 import unittest
 from pathlib import Path
 from bgin import Document, FormatError
-from build_native_ui import add_entry_card, add_rule_checkboxes, clone_native_row, build_keyboard_document, build_panel_document
+from build_native_ui import add_entry_card, add_rule_checkboxes, clone_native_row, build_keyboard_document, build_panel_document, build_roster_document
 
 
 GUI = None
@@ -101,6 +101,18 @@ class NativeResourceTests(unittest.TestCase):
         self.assertEqual(rows.children, [])
         self.assertEqual(frame.children, [rows])
         self.assertEqual(decoded.encode(), panel.encode())
+
+    def test_waiting_room_roster_has_eight_cells_and_pager(self):
+        original, document = self.load("multiplayer_menu")
+        _, controls = self.load("windows_contents")
+        roster = Document.parse(build_roster_document(document, controls).encode())
+        root = roster.root("screen_mp_private_lobby_waitroom")
+        self.assertEqual([len(row.children) for row in root.children], [4, 4, 3])
+        for index in range(8):
+            root.find("offline_roster_slot_" + str(index))
+        for name in ("prev", "status", "next"):
+            root.find("offline_roster_" + name)
+        self.assertEqual(document.encode(), original)
 
     def test_fail_closed_on_corruption(self):
         data, document = self.load("multiplayer_menu")

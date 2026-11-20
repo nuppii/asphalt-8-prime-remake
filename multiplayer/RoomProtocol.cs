@@ -69,6 +69,8 @@ namespace OfflineLab.Multiplayer
         [DataMember] public bool IsHost;
         [DataMember] public bool IsModerator;
         [DataMember] public int RttMs;
+        // One-based lobby slot. Zero is an older snapshot without slot assignments.
+        [DataMember(EmitDefaultValue=false)] public int GridSlot;
         public RoomMember Copy() { return (RoomMember)MemberwiseClone(); }
     }
 

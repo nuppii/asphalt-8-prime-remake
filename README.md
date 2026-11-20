@@ -89,22 +89,24 @@ The MSVC path above is an example from the development machine; adjust it to you
 The resulting launcher is placed directly in the selected game folder:
 
 ```text
-Asphalt 8 Airborne 4.8 Offline.exe
+Asphalt 8 Airborne 4.8.exe
 ```
 
 Launch that executable and press **Insert**. You can create a Windows shortcut to it. The tray menu also exposes **Show / hide**, **Launch game** and **Exit trainer**.
+
+The Windows registration revision is 4.8.0.8 so an existing installation can pick up the display name. The engine is still the supported 4.8.0.7 build and the existing package family is used for local saves.
 
 For an already registered offline copy, build just the trainer:
 
 ```powershell
 .\trainer\Build-Trainer.ps1 `
   -MsvcBin '<your Hostx86\x86 directory>' `
-  -Output 'D:\Games\Asphalt8-Offline\Asphalt 8 Airborne 4.8 Offline.exe'
+  -Output 'D:\Games\Asphalt8-Offline\Asphalt 8 Airborne 4.8.exe'
 ```
 
 Close the game and existing trainer before replacing the launcher. Restart the game after an update so the new trainer starts from original in-memory bytes.
 
-Use the full installer when upgrading to the native multiplayer controls: it also generates their two local UI resources. Building the trainer alone does not create those resources.
+Use the full installer when upgrading to the native multiplayer controls. It generates the local panel, keyboard, and waiting-room roster resources and archives the former launcher name. Building the trainer alone does not create those resources.
 
 ## Using the trainer
 

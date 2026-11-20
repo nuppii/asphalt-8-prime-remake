@@ -11,4 +11,24 @@
  * Readers accept only equal, even revision/endRevision snapshots.
  */
 void __cdecl NativeTransportTick(unsigned module,void *screen,NativeUiState *ui);
+
+enum { NATIVE_ROSTER_CAPACITY = 12 };
+typedef struct NativeRosterUser {
+    unsigned identity[4];
+    char name[32];
+} NativeRosterUser;
+typedef struct NativeRoster {
+    unsigned capacity, humans, fill, roomLow, roomHigh;
+    NativeRosterUser users[NATIVE_ROSTER_CAPACITY];
+} NativeRoster;
+
+typedef struct NativeRosterSlots {
+    unsigned roomLow, roomHigh, occupied;
+    unsigned identities[NATIVE_ROSTER_CAPACITY][4];
+} NativeRosterSlots;
+
+unsigned __cdecl NativeReadRoster(unsigned module, void *screen, NativeRoster *roster);
+/* Source indexes are one-based, with zero for a free or AI-reserved slot. */
+__declspec(dllexport) unsigned __cdecl NativeAssignRoster(
+    const NativeRoster *roster, NativeRosterSlots *slots, unsigned *sources);
 #endif

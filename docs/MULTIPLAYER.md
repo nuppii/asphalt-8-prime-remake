@@ -6,6 +6,12 @@ Native public-room publication and selected-directory joining are implemented th
 
 Additional native pages provide **Room Options**, **Find by Name**, **Friends**, **Connection** and keyboard entry. Room names and requested policies persist locally. Grid and laps use **Default** or **1–60**; Default requests the original event value. A saved setting or visible toggle does not establish native race enforcement.
 
+The host waiting room displays a numbered roster for custom **Grid** sizes. Eight cells fit on each page, so a grid of twenty ends at slot twenty on page three. At room creation, the requested size can lower the native admission capacity, with a native minimum of two. The event's original upper limit still applies. Connected humans keep their initial UI slot by native player identity as long as the room stays open. Vacated cells return to **AI SLOT** when native AI fill is on or **OPEN SLOT** when it is off, and the next arrival takes the first available cell. Cells beyond the room's capacity show **UNAVAILABLE**. **Default** and guest rooms retain the original roster. The native slot mapping passed isolated tests for arrival, departure, reorder and room change. A live peer join remains unverified.
+
+The original host path caps capacity at eight. The native descriptor packs eight guest records of size `0x344` from offset `0x374` to the metadata count at `0x1D94`. Extending that count in place would overwrite metadata. The race server separately rejects more than twelve humans and caps total racers after AI fill at twelve. See the [native roster and replication limits](NATIVE-MULTIPLAYER-RESEARCH.md#native-roster-and-replication-limits).
+
+The separate TCP room protocol now assigns each human a one-based slot. With **Fill bots** enabled, unoccupied slots are reserved for AI. Joining claims one slot, and leaving reopens that specific slot without renumbering the other connected players. The room test harness exercised 1, 10, 20 and 60 local TCP connections, full-room rejection, and reuse of a vacated slot. The native race server does not yet consume these assignments.
+
 ![Native in-game multiplayer controls](images/multiplayer-native-controls.jpg)
 
 ![Native room options; enforcement limitations are shown in the status line](images/multiplayer-native-options.jpg)
@@ -30,7 +36,11 @@ Additional native pages provide **Room Options**, **Find by Name**, **Friends**,
 
 This is a native LAN foundation. Joining from another physical PC, synchronized human driving, automatic native race-host migration, Internet reachability and 60-human grids have not been verified.
 
-A temporary single-human launch experiment reached NetworkManager/NetworkServer start and Nevada loading, then displayed the native **You are alone** dialog. This does not establish a playable synchronized race. The temporary minimum-human change was restored and is not shipped.
+An opt-in developer build (`Build-Trainer.ps1 -ExperimentalBotRace`) allows the host to press **Launch** in a native Classic room with one human and AI fill enabled. Removing the bots disabled Launch again in the installed test. Nevada loaded with three laps, then the native **You are alone** prompt repeatedly interrupted that initial trial. The follow-up build adds an alert exception only for a live local Classic server with one active human and at least one active AI racer. An isolated x86 test verified the exception and original alert fallback, and both hooks were observed loaded in the game process. Driving with the follow-up build remains unverified. Standard builds leave both hooks disabled.
+
+The native start path builds the race roster from the joining peers and the host before the race, and directory publication currently ends when the waiting room closes. The existing lobby port and the separately negotiated race port have different roles. Mid-race backfill needs a reachable admission path, a current race-state snapshot for the newcomer, and an acknowledged handoff of a bot's race slot. Those paths have yet to be implemented.
+
+The server's incoming racer-association routine at preferred address `0xD6E0E0` searches the existing roster for the peer's 16-byte identity and compares the peer endpoint with the endpoint stored on that racer. A directory entry cannot allocate or transfer this binding. The bot must stay under AI control until the newcomer has loaded the event and acknowledged the current race state.
 
 ## Remaining integration
 
@@ -47,6 +57,8 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 | Connection URL and keyboard entry | Native controls implemented; saved URL restores and can be cleared |
 | Password entry and custom room policies | Native controls implemented; private native authentication and policy enforcement pending |
 | Fill with AI policy bridge | Installed build without Frida: ON populated six AI, native Remove AI removed them and saved OFF; restoring ON populated a fresh room |
+| Start with one human and race against AI | Experimental Launch control tested in Classic on Nevada; follow-up alert exception tested in isolation and still awaiting a driving test |
+| Join an active race and replace a bot | Not implemented |
 | Default / 1–60 grid and lap controls | Requested settings persist; lap code passes an isolated x86 fixture; native race behavior remains unverified |
 | 60 human racers | Native server start rejects counts above 12; layout has eight visible entries |
 | Automatic native race-host migration | Not implemented |

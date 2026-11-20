@@ -138,6 +138,34 @@ def build_panel_document(document):
     return Document(document.magic, b"offline_lobby_panel", [(key, root)])
 
 
+def build_roster_document(document, controls_document):
+    """Eight reusable native cells and a footer for the waiting-room roster."""
+    source = document.root("screen_mp_private_lobby_waitroom")
+    key = next(key for key, node in document.records if node is source)
+    rows = source.find("player_list").clone(source.name)
+    horizontal = source.find("upper_player_row")
+    button = controls_document.root("input_tranfer_code_screen").find("paste_button")
+
+    def cell(name, title):
+        item = button.clone(name)
+        item.property(TEXT).set_string(title + "|")
+        item.property(0xC8176D90).payload = struct.pack("<dddd", 0, 0, 0, 0)
+        return item
+
+    rows.children = []
+    for index in range(2):
+        row = horizontal.clone("offline_roster_row_" + str(index))
+        row.children = [cell("offline_roster_slot_" + str(slot), "OPEN SLOT")
+                        for slot in range(4 * index, 4 * index + 4)]
+        rows.children.append(row)
+    footer = horizontal.clone("offline_roster_footer")
+    footer.children = [cell("offline_roster_prev", "PREVIOUS"),
+                       cell("offline_roster_status", "RACERS"),
+                       cell("offline_roster_next", "NEXT")]
+    rows.children.append(footer)
+    return Document(document.magic, b"offline_lobby_roster", [(key, rows)])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gui", required=True, type=Path, help="Installed Data/gui directory")
@@ -145,11 +173,13 @@ def main():
     parser.add_argument("--rules-panel", action="store_true", help="Add experimental native rules panel; requires runtime layout verification")
     parser.add_argument("--keyboard-only", action="store_true", help="Generate standalone offline_lobby_ui.bgin; do not modify multiplayer layouts")
     parser.add_argument("--panel-only", action="store_true", help="Generate standalone offline_lobby_panel.bgin with empty vertical rows")
+    parser.add_argument("--roster-only", action="store_true", help="Generate the native waiting-room roster")
     args = parser.parse_args()
-    if args.keyboard_only and args.panel_only:
-        parser.error("Choose either --keyboard-only or --panel-only")
+    if sum((args.keyboard_only, args.panel_only, args.roster_only)) > 1:
+        parser.error("Choose only one standalone resource")
     source = args.gui / "multiplayer_menu.bgin"
-    output = args.output / ("offline_lobby_panel.bgin" if args.panel_only else
+    output = args.output / ("offline_lobby_roster.bgin" if args.roster_only else
+                            "offline_lobby_panel.bgin" if args.panel_only else
                             "offline_lobby_ui.bgin" if args.keyboard_only else source.name)
     if output.resolve() == source.resolve() or args.output.resolve() == args.gui.resolve():
         parser.error("Output must be separate from installed assets")
@@ -157,7 +187,10 @@ def main():
     document = Document.parse(original)
     if document.encode() != original:
         raise ValueError("Lossless source roundtrip failed")
-    if args.panel_only:
+    if args.roster_only:
+        controls = Document.parse((args.gui / "windows_contents.bgin").read_bytes())
+        document = build_roster_document(document, controls)
+    elif args.panel_only:
         document = build_panel_document(document)
     elif args.keyboard_only:
         controls = Document.parse((args.gui / "windows_contents.bgin").read_bytes())

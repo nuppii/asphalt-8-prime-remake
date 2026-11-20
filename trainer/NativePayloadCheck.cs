@@ -16,6 +16,9 @@ internal static class NativePayloadCheck
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void Run();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint BeginDirect(uint module,IntPtr menu,IntPtr state);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint ParseIPv4(IntPtr text,IntPtr destination);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint SoloBotRace(uint module);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint RosterPage(uint requested,uint humans,ref uint page);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint AssignRoster(IntPtr roster,IntPtr slots,IntPtr sources);
     static int checks;
     static void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); ++checks; }
     static uint U(IntPtr p) { return unchecked((uint)p.ToInt32()); }
@@ -170,12 +173,237 @@ internal static class NativePayloadCheck
         int[] regs={0x11223344,0x22334455,0x33445566,0x44556677,0x55667788,unchecked((int)(U(scratch)+0x28)),server.ToInt32()};for(int i=0;i<regs.Length;++i)Check(Marshal.ReadInt32(observed,i*4)==regs[i],"lap register effect "+i);
         Check((Marshal.ReadInt32(observed,28)&0x40)!=0,"original displaced CMP sets ZF");
     }
+    static void BotRaceCase(Type catalog)
+    {
+        IntPtr memory = Allocate(0xA9B000);
+        try
+        {
+            IntPtr cave = Plus(memory, 0x1000), wrapper = Plus(memory, 0x2000);
+            IntPtr screen = Plus(memory, 0x3000), room = Plus(memory, 0x4000);
+            IntPtr race = Plus(memory, 0x5000), result = Plus(memory, 0x6000);
+            object hack = catalog.GetField("NativeBotRaceLaunch", Any).GetValue(null);
+            Put(cave, Builder(hack)(U(memory), U(cave)));
+            Put(Plus(memory, 0xA99318), 0x6a, 0x01, 0x5a, 0xc3); // EDX = enabled
+            Put(Plus(memory, 0xA99321), 0x31, 0xd2, 0xc3); // EDX = disabled
+            int expectedRoomType = unchecked((int)(U(memory) + 0x1D6A510));
+
+            Action<string, int, bool, bool, bool, int, int, bool> verify =
+                (name, humans, host, bots, nativeRoom, slots, mode, allowed) =>
+            {
+                Marshal.WriteInt32(screen, 0x278, mode < 0 ? 0 : race.ToInt32());
+                Marshal.WriteByte(screen, 0x284, host ? (byte)1 : (byte)0);
+                Marshal.WriteByte(screen, 0x288, bots ? (byte)1 : (byte)0);
+                Marshal.WriteInt32(room, nativeRoom ? expectedRoomType : 0);
+                Marshal.WriteInt32(room, 0x5c, slots);
+                Marshal.WriteInt32(race, 0x10, mode);
+                var code = new List<byte> { 0x60 }; // PUSHAD
+                Mov(code, 0xb8, 0x11223344);
+                Mov(code, 0xb9, (uint)humans);
+                Mov(code, 0xbb, U(screen));
+                Mov(code, 0xbf, U(room));
+                code.Add(0xe8);
+                Imm(code, unchecked(U(cave) - (U(wrapper) + (uint)code.Count + 4)));
+                Store(code, 0x05, U(result));
+                Store(code, 0x15, U(result) + 4);
+                code.AddRange(new byte[] { 0x61, 0xc3 }); // POPAD, RET
+                Put(wrapper, code.ToArray());
+                var run = (Run)Marshal.GetDelegateForFunctionPointer(wrapper, typeof(Run));
+                run();
+                Check(Marshal.ReadInt32(result) == 0x11223344, "bot race preserves EAX: " + name);
+                Check(Marshal.ReadInt32(result, 4) == (allowed ? 1 : 0), "bot race eligibility: " + name);
+            };
+            verify("host with bots", 1, true, true, true, 2, 0, true);
+            verify("native capacity limit", 1, true, true, true, 12, 0, true);
+            verify("stock room with two players", 2, false, false, false, 0, -1, true);
+            verify("empty room", 0, true, true, true, 2, 0, false);
+            verify("non-host", 1, false, true, true, 2, 0, false);
+            verify("bots disabled", 1, true, false, true, 2, 0, false);
+            verify("foreign room", 1, true, true, false, 2, 0, false);
+            verify("no bot slot", 1, true, true, true, 1, 0, false);
+            verify("capacity above native limit", 1, true, true, true, 13, 0, false);
+            verify("event unavailable", 1, true, true, true, 2, -1, false);
+            verify("non-Classic event", 1, true, true, true, 2, 1, false);
+            Console.WriteLine("PASS experimental bot race Launch eligibility and EAX preservation.");
+        }
+        finally
+        {
+            VirtualFree(memory, UIntPtr.Zero, 0x8000);
+        }
+    }
+
+    static void BotRaceAloneCase(Type catalog, Type hook, IntPtr wallet)
+    {
+        IntPtr module = Allocate(0x1E60000);
+        try
+        {
+            IntPtr manager = Plus(module, 0x1000), callback = Plus(module, 0x2000);
+            IntPtr server = Plus(module, 0x3000), roster = Plus(module, 0x4000);
+            IntPtr human = Plus(module, 0x5000), bot = Plus(module, 0x8000);
+            IntPtr cave = Plus(module, 0xb000), result = Plus(module, 0xc000);
+            Marshal.WriteInt32(Plus(module, 0x1e511bc), manager.ToInt32());
+            Marshal.WriteInt32(manager, Plus(module, 0x1d3a030).ToInt32());
+            Marshal.WriteInt32(manager, 0xe8, callback.ToInt32());
+            Marshal.WriteInt32(callback, Plus(module, 0x1d6a4e4).ToInt32());
+            Marshal.WriteInt32(manager, 0xec, server.ToInt32());
+            Marshal.WriteInt32(server, Plus(module, 0x1d41dac).ToInt32());
+            Marshal.WriteInt32(server, 0x104, 1);
+            Marshal.WriteInt32(server, 0x108, 1);
+            Marshal.WriteByte(server, 0x168, 1);
+            Marshal.WriteInt32(server, 0xc, roster.ToInt32());
+            Marshal.WriteInt32(server, 0x10, Plus(roster, 8).ToInt32());
+            Marshal.WriteInt32(server, 0x14, Plus(roster, 8).ToInt32());
+            Marshal.WriteInt32(roster, human.ToInt32());
+            Marshal.WriteInt32(roster, 4, bot.ToInt32());
+            foreach (IntPtr racer in new[] { human, bot })
+            {
+                Marshal.WriteInt32(racer, Plus(module, 0x1d19464).ToInt32());
+                Marshal.WriteByte(racer, 0x2290, 1);
+            }
+            Marshal.WriteByte(bot, 0x22f9, 1);
+
+            IntPtr entry = Plus(wallet, 0x2000 + Export(hook, "NativeSoloBotRace"));
+            var eligible = (SoloBotRace)Marshal.GetDelegateForFunctionPointer(entry, typeof(SoloBotRace));
+            Check(eligible(U(module)) == 1, "solo bot race uses the complete object's server field");
+            Marshal.WriteInt32(manager, 0xec, callback.ToInt32());
+            Check(eligible(U(module)) == 0, "lobby callback cannot stand in for the server");
+            Marshal.WriteInt32(manager, 0xec, server.ToInt32());
+            Marshal.WriteInt32(server, 0x104, 2);
+            Check(eligible(U(module)) == 0, "original alert retained after a human peer leaves");
+            Marshal.WriteInt32(server, 0x104, 1);
+            Marshal.WriteByte(bot, 0x2290, 0);
+            Check(eligible(U(module)) == 0, "inactive bot cannot clear the alert");
+            Marshal.WriteByte(bot, 0x2290, 1);
+            Marshal.WriteInt32(server, 0x10, Plus(roster, 12).ToInt32());
+            Check(eligible(U(module)) == 0, "out-of-bounds roster rejected");
+            Marshal.WriteInt32(server, 0x10, Plus(roster, 8).ToInt32());
+
+            hook.GetField("StateAddress", Any).SetValue(null, (long)U(wallet) + 0x38000);
+            object hack = catalog.GetField("NativeBotRaceAlone", Any).GetValue(null);
+            Put(cave, Builder(hack)(U(module), U(cave)));
+            var reset = new List<byte> { 0xff, 0x05 };
+            Imm(reset, U(result));
+            reset.Add(0xc3);
+            Put(Plus(module, 0xD555EF), reset.ToArray());
+            var pause = new List<byte> { 0xff, 0x05 };
+            Imm(pause, U(result) + 4);
+            pause.Add(0xc3);
+            Put(Plus(module, 0x83CC20), pause.ToArray());
+            Put(Plus(module, 0xD5559F), 0xc3);
+            var run = (Run)Marshal.GetDelegateForFunctionPointer(cave, typeof(Run));
+            run();
+            Check(Marshal.ReadInt32(result) == 1 && Marshal.ReadInt32(result, 4) == 0,
+                "solo wrapper takes only the timer reset branch");
+            Marshal.WriteByte(server, 0x168, 0);
+            run();
+            Check(Marshal.ReadInt32(result) == 1 && Marshal.ReadInt32(result, 4) == 1,
+                "wrapper replays original pause when AI fill is off");
+            Console.WriteLine("PASS native solo bot race predicate and original alert fallback.");
+        }
+        finally
+        {
+            VirtualFree(module, UIntPtr.Zero, 0x8000);
+        }
+    }
+
+    static void RosterCase(Type hook, IntPtr wallet)
+    {
+        var entry = Plus(wallet, 0x2000 + Export(hook, "NativeRosterPage"));
+        var plan = (RosterPage)Marshal.GetDelegateForFunctionPointer(entry, typeof(RosterPage));
+        uint page = 2;
+        Check(plan(20, 1, ref page) == 20 && page == 2, "20 slots keep the page containing slots 17 to 20");
+        page = 7;
+        Check(plan(60, 1, ref page) == 60 && page == 7, "60 slots reach the final page");
+        Check(plan(20, 1, ref page) == 20 && page == 2, "smaller custom grid clamps the active page");
+        Check(plan(1, 1, ref page) == 1 && page == 0, "one slot shows one page");
+        Check(plan(1, 2, ref page) == 2 && page == 0, "live humans are kept visible");
+        Console.WriteLine("PASS native room roster page and occupied-slot bounds.");
+    }
+
+    static void LiveRosterCase(Type hook, IntPtr wallet, IntPtr memory)
+    {
+        IntPtr roster = memory, slots = Plus(memory, 0x1000), sources = Plus(memory, 0x2000);
+        Clear(slots, 204);
+        Marshal.WriteInt32(roster, 0, 8);
+        Marshal.WriteInt32(roster, 12, 42);
+        Marshal.WriteInt32(roster, 16, 7);
+        var entry = Plus(wallet, 0x2000 + Export(hook, "NativeAssignRoster"));
+        var assign = (AssignRoster)Marshal.GetDelegateForFunctionPointer(entry, typeof(AssignRoster));
+        Action<int[]> users = identities =>
+        {
+            Marshal.WriteInt32(roster, 4, identities.Length);
+            for (int i = 0; i < identities.Length; ++i)
+                for (int field = 0; field < 4; ++field)
+                    Marshal.WriteInt32(roster, 20 + 48 * i + field * 4, identities[i] + field);
+        };
+        Action<string, int[]> verify = (label, expected) =>
+        {
+            Check(assign(roster, slots, sources) == 1, label + " accepted");
+            for (int i = 0; i < expected.Length; ++i)
+                Check(Marshal.ReadInt32(sources, i * 4) == expected[i], label + " slot " + (i + 1));
+        };
+        users(new[] { 1, 10, 20, 30 });
+        verify("initial roster", new[] { 1, 2, 3, 4, 0 });
+        users(new[] { 1, 30, 20 });
+        verify("a departure frees exactly its original slot", new[] { 1, 0, 3, 2, 0 });
+        users(new[] { 1, 40, 20, 30 });
+        verify("new player reuses the vacated slot", new[] { 1, 2, 3, 4, 0 });
+        users(new[] { 1, 30, 30 });
+        byte[] prior = Snapshot(slots, 204);
+        Check(assign(roster, slots, sources) == 0 && Equal(prior, Snapshot(slots, 204)),
+              "duplicate identity does not mutate the last valid assignment");
+        users(new[] { 1, 30, 20 });
+        Marshal.WriteInt32(roster, 16, 8);
+        verify("new room resets the slot mapping", new[] { 1, 2, 3, 0, 0 });
+        users(new[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+        verify("full eight-place native roster", new[] { 1, 2, 3, 4, 5, 6, 7, 8, 0 });
+        Console.WriteLine("PASS stable native roster mapping on join, departure, reorder and room changes.");
+    }
+
+    static void RoomCapacityCase(Type catalog, Type hook, IntPtr memory)
+    {
+        IntPtr frame = Plus(memory, 0x1800), state = Plus(memory, 0x2000);
+        IntPtr eventLimit = Plus(memory, 0x3000), wrapper = Plus(memory, 0x4000);
+        hook.GetField("StateAddress", Any).SetValue(null, (long)U(state));
+        object hack = catalog.GetField("NativeRoomCapacity", Any).GetValue(null);
+        byte[] body = Builder(hack)(0x10000000, U(memory));
+        Check(body[body.Length - 5] == 0xe9, "capacity hook rejoins the stock room-name path");
+        body[body.Length - 5] = 0xc3;
+        Put(memory, body);
+        var code = new List<byte> { 0x60 };
+        Mov(code, 0xb8, 0x11223344);
+        Mov(code, 0xbd, U(frame));
+        Mov(code, 0xb9, U(eventLimit));
+        code.Add(0xe8);
+        Imm(code, unchecked(U(memory) - (U(wrapper) + (uint)code.Count + 4)));
+        code.AddRange(new byte[] { 0x61, 0xc3 });
+        Put(wrapper, code.ToArray());
+        var run = (Run)Marshal.GetDelegateForFunctionPointer(wrapper, typeof(Run));
+        foreach (var item in new[] {
+            new[] { 0, 8, 8 }, new[] { 1, 8, 2 }, new[] { 4, 8, 4 },
+            new[] { 8, 8, 8 }, new[] { 20, 8, 8 }, new[] { 60, 6, 6 },
+            new[] { -1, 8, 8 }, new[] { 61, 8, 8 } })
+        {
+            Marshal.WriteInt32(state, 36, item[0]);
+            Marshal.WriteInt32(eventLimit, item[1]);
+            run();
+            Check(Marshal.ReadInt32(frame, -0x1c) == item[2], "native capacity for grid " + item[0] + " and event " + item[1]);
+            Check(Marshal.ReadInt32(frame, -0x18) == 0x11223344, "capacity hook preserves displaced stock store");
+        }
+        Console.WriteLine("PASS native room capacity argument: default, custom, event cap and minimum.");
+    }
+
     public static int Main(string[] args) {
         IntPtr wallet=IntPtr.Zero,lap=IntPtr.Zero;FieldInfo stateField=null;long saved=0;
         try { Check(IntPtr.Size==4,"fixture must run x86");Check(args.Length==1&&File.Exists(args[0]),"explicit trainer assembly path required");Assembly a=Assembly.LoadFrom(Path.GetFullPath(args[0]));Type catalog=a.GetType("InjectionCatalog",true),hook=a.GetType("NativeLobbyHook",true);stateField=hook.GetField("StateAddress",Any);saved=(long)stateField.GetValue(null);
             wallet=Allocate(0x40000);Wallet(a,catalog,hook,wallet);DirectCase(catalog,hook,wallet);NativeNetworkCase(hook,wallet);lap=Allocate(0x6000);stateField.SetValue(null,(long)U(lap)+0x2000);object hack=catalog.GetField("NativeClassicLaps",Any).GetValue(null);Func<long,long,byte[]> build=Builder(hack);
             LapCase(build,lap,0,0,1,2,2);LapCase(build,lap,1,0,1,2,1);LapCase(build,lap,60,0,1,2,60);LapCase(build,lap,61,0,1,2,2);LapCase(build,lap,-1,0,1,2,2);LapCase(build,lap,3,1,1,2,2);LapCase(build,lap,3,0,0,2,2);LapCase(build,lap,0,0,1,7,7);
-            Console.WriteLine("PASS isolated native lap execution: default, 1, 60, invalid range, mode/private gates, original register/tail effects.");Console.WriteLine("PASS "+checks+" assertions. This does not validate the game UI, network peers, or races.");return 0;
+            Console.WriteLine("PASS isolated native lap execution: default, 1, 60, invalid range, mode/private gates, original register/tail effects.");
+            BotRaceCase(catalog);
+            BotRaceAloneCase(catalog, hook, wallet);
+            RosterCase(hook, wallet);
+            LiveRosterCase(hook, wallet, lap);
+            RoomCapacityCase(catalog, hook, lap);
+            Console.WriteLine("PASS "+checks+" assertions. This does not validate the game UI, network peers, or races.");return 0;
         } catch(Exception e){Console.Error.WriteLine("FAIL "+e);return 1;}
         finally{if(stateField!=null)stateField.SetValue(null,saved);if(lap!=IntPtr.Zero)VirtualFree(lap,UIntPtr.Zero,0x8000);if(wallet!=IntPtr.Zero)VirtualFree(wallet,UIntPtr.Zero,0x8000);}
     }

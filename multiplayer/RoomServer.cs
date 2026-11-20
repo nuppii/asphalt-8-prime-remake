@@ -26,10 +26,13 @@ namespace OfflineLab.Multiplayer
         private long revision;
         private TcpListener listener;
         private Timer heartbeat;
+        private Timer rttPublish;
+        private bool rttDirty;
         private volatile bool stopped;
         private int handshakes;
         private readonly ManualResetEvent handoverFinished=new ManualResetEvent(false);
         private readonly HashSet<string> inheritedModerators=new HashSet<string>();
+        private readonly Dictionary<string,int> inheritedSlots=new Dictionary<string,int>();
         private readonly Dictionary<string,string> sessionTickets=new Dictionary<string,string>();
         private readonly HashSet<string> handoverPending=new HashSet<string>();
         private string handoverCandidate;
@@ -54,7 +57,13 @@ namespace OfflineLab.Multiplayer
             {
                 mapId=seed.MapId;
                 foreach(var vote in seed.Votes)if(vote.Key!=seed.HostId)votes[vote.Key]=vote.Value;
-                foreach(RoomMember member in seed.Members)if(member.IsModerator&&member.Id!=seed.HostId)inheritedModerators.Add(member.Id);
+                foreach(RoomMember member in seed.Members)
+                {
+                    if(member.Id==seed.HostId)continue;
+                    if(member.IsModerator)inheritedModerators.Add(member.Id);
+                    if(member.GridSlot>0&&member.GridSlot<=this.settings.EffectiveGridSlots)
+                        inheritedSlots[member.Id]=member.GridSlot;
+                }
                 revision=seed.Revision+1;
                 if(tickets!=null)foreach(var ticket in tickets)if(ticket.Key!=seed.HostId)sessionTickets[ticket.Key]=ticket.Value;
             }
@@ -65,6 +74,7 @@ namespace OfflineLab.Multiplayer
             if(port<0||port>65535)throw new ArgumentOutOfRangeException("port");
             listener=new TcpListener(IPAddress.Any,port);
             listener.Start(64);Port=((IPEndPoint)listener.LocalEndpoint).Port;
+            rttPublish=new Timer(PublishRtt,null,Timeout.Infinite,Timeout.Infinite);
             var thread=new Thread(AcceptLoop){IsBackground=true,Name="Offline Lab room listener"};thread.Start();
             heartbeat=new Timer(Heartbeat,null,3000,3000);
         }
@@ -119,10 +129,16 @@ namespace OfflineLab.Multiplayer
                         if(!RoomProtocol.EqualProof(sessionProof,join.SessionProof))throw new InvalidOperationException("Invalid migrated player session proof.");
                     }
                     else ticket=Convert.ToBase64String(RoomProtocol.RandomBytes(32));
+                    ulong occupied=OccupiedSlots(settings.EffectiveGridSlots);
+                    int previousSlot;
+                    int gridSlot=inheritedSlots.TryGetValue(id,out previousSlot) &&
+                        previousSlot<=settings.EffectiveGridSlots && (occupied&(1UL<<(previousSlot-1)))==0
+                        ?previousSlot:FirstFreeSlot(occupied,settings.EffectiveGridSlots);
                     var member=new RoomMember{Id=id,Nickname=join.Profile.Nickname,Status=join.Profile.Status,GroupTag=join.Profile.GroupTag,
-                        IsHost=hostClaim,IsModerator=hostClaim||inheritedModerators.Contains(id),RttMs=-1,Endpoint=socket.Client.RemoteEndPoint.ToString()};
+                        IsHost=hostClaim,IsModerator=hostClaim||inheritedModerators.Contains(id),RttMs=-1,
+                        GridSlot=gridSlot,Endpoint=socket.Client.RemoteEndPoint.ToString()};
                     peer=new Peer(this,socket,member);
-                    peers.Add(id,peer);sessionTickets[id]=ticket;if(hostClaim)hostId=id;
+                    peers.Add(id,peer);sessionTickets[id]=ticket;inheritedSlots.Remove(id);if(hostClaim)hostId=id;
                     ++revision;
                     RoomProtocol.Write(stream,new WirePacket{Type="welcome",Id=id,SessionTicket=ticket,Snapshot=SnapshotLocked()});
                 }
@@ -162,7 +178,13 @@ namespace OfflineLab.Multiplayer
                             if(packet.Ping!=sender.LastPing)break;
                             sender.LastPong=Stopwatch.GetTimestamp();
                             double milliseconds=(sender.LastPong-packet.Ping)*1000.0/Stopwatch.Frequency;
-                            sender.Member.RttMs=Math.Max(0,Math.Min(60000,(int)milliseconds));changed=true;break;
+                            sender.Member.RttMs=Math.Max(0,Math.Min(60000,(int)milliseconds));
+                            if(!rttDirty && !stopped)
+                            {
+                                rttDirty=true;
+                                rttPublish.Change(100,Timeout.Infinite);
+                            }
+                            break;
                         case "takeover-ready":
                             CompleteNomination(sender,packet);return;
                         case "profile":
@@ -176,6 +198,14 @@ namespace OfflineLab.Multiplayer
                             if(packet.Settings==null)throw new ArgumentException("Room settings are required.");
                             packet.Settings.Validate();
                             if(packet.Settings.EffectiveGridSlots<peers.Count)throw new ArgumentException("The grid cannot be smaller than the connected player count.");
+                            int capacity=packet.Settings.EffectiveGridSlots;
+                            ulong occupied=OccupiedSlots(capacity);
+                            foreach(Peer member in peers.Values.Where(p=>p.Member.GridSlot>capacity).OrderBy(p=>p.Member.GridSlot))
+                            {
+                                int slot=FirstFreeSlot(occupied,capacity);
+                                member.Member.GridSlot=slot;
+                                occupied|=1UL<<(slot-1);
+                            }
                             settings=packet.Settings.Copy();changed=true;break;
                         case "kick":
                             if(!sender.Member.IsModerator)throw new InvalidOperationException("Only the host or a moderator can exclude players.");
@@ -208,6 +238,22 @@ namespace OfflineLab.Multiplayer
         }
         private static void RequireHost(Peer sender)
         {if(!sender.Member.IsHost)throw new InvalidOperationException("Only the room host can perform this action.");}
+        private ulong OccupiedSlots(int capacity)
+        {
+            ulong occupied=0;
+            foreach(Peer peer in peers.Values)
+            {
+                int slot=peer.Member.GridSlot;
+                if(slot>0&&slot<=capacity)occupied|=1UL<<(slot-1);
+            }
+            return occupied;
+        }
+        private static int FirstFreeSlot(ulong occupied,int capacity)
+        {
+            for(int slot=1;slot<=capacity;++slot)
+                if((occupied&(1UL<<(slot-1)))==0)return slot;
+            throw new InvalidOperationException("The room is full.");
+        }
         private RoomSnapshot SnapshotLocked()
         {
             return new RoomSnapshot{RoomId=roomId,Name=name,HostId=hostId,MapId=mapId,Settings=settings.Copy(),
@@ -231,6 +277,16 @@ namespace OfflineLab.Multiplayer
                 peer.LastPing=now;peer.Send(new WirePacket{Type="ping",Ping=now});
             }
         }
+        private void PublishRtt(object ignored)
+        {
+            lock(gate)
+            {
+                if(stopped||!rttDirty)return;
+                rttDirty=false;
+                ++revision;
+            }
+            Publish();
+        }
         private void Drop(Peer peer,string reason)
         {
             bool removed;bool hostLeft=false;
@@ -251,7 +307,7 @@ namespace OfflineLab.Multiplayer
             Peer[] targets;
             lock(gate)
             {if(stopped)return;stopped=true;targets=peers.Values.ToArray();peers.Clear();votes.Clear();}
-            if(heartbeat!=null)heartbeat.Dispose();if(handoverTimer!=null)handoverTimer.Dispose();if(listener!=null)listener.Stop();
+            if(heartbeat!=null)heartbeat.Dispose();if(rttPublish!=null)rttPublish.Dispose();if(handoverTimer!=null)handoverTimer.Dispose();if(listener!=null)listener.Stop();
             foreach(Peer peer in targets)peer.Close();
             handoverFinished.Set();
         }

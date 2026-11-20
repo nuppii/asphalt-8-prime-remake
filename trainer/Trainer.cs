@@ -52,7 +52,7 @@ internal sealed class TrainerContext : ApplicationContext
         tray = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "Asphalt 8 Offline Trainer",
+            Text = "Asphalt 8 Trainer",
             Visible = true,
             ContextMenu = new ContextMenu(new[]
             {
@@ -170,7 +170,7 @@ internal sealed class TrainerForm : Form
     {
         LoadToolStates();
         LoadMutatorSettings();
-        Text = "Asphalt 8 Offline Trainer";
+        Text = "Asphalt 8 Trainer";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1050, 680);
@@ -1968,10 +1968,21 @@ internal sealed class TrainerForm : Form
             Log("Native lobby dispatcher: " + multiplayerError);
         else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeRoomName,true,out multiplayerError))
             Log("Native room name: " + multiplayerError);
+        else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeRoomCapacity,true,out multiplayerError))
+            Log("Native room capacity: " + multiplayerError);
         else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeClassicLaps,true,out multiplayerError))
             Log("Native Classic laps: " + multiplayerError);
         else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeDirectDiscovery,true,out multiplayerError))
             Log("Native direct discovery: " + multiplayerError);
+#if EXPERIMENTAL_BOT_RACE
+        if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeBotRaceAlone,true,out multiplayerError))
+            Log("Native bot race alone dialog: " + multiplayerError);
+        else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeBotRaceLaunch,true,out multiplayerError))
+        {
+            Log("Native bot race launch: " + multiplayerError);
+            NativeInjectionEngine.Toggle(InjectionCatalog.NativeBotRaceAlone,false,out multiplayerError);
+        }
+#endif
         foreach (string name in new[] { "Offline Standard Upgrade Credits", "Offline Standard Upgrade Gems" })
         {
             string upgradeError;

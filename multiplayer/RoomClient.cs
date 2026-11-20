@@ -10,7 +10,7 @@ namespace OfflineLab.Multiplayer
         private readonly TcpClient socket;
         private readonly NetworkStream stream;
         private int closed;
-        private RoomSnapshot snapshot;
+        private volatile RoomSnapshot snapshot;
         private readonly string password;
         private readonly string sessionId;
         private readonly string connectionAddress;
@@ -108,8 +108,9 @@ namespace OfflineLab.Multiplayer
                 {
                     WirePacket packet=RoomProtocol.Read(stream);
                     if(packet.Type=="ping")Send(new WirePacket{Type="pong",Ping=packet.Ping});
-                    else if(packet.Type=="snapshot"&&packet.Snapshot!=null)
+                    else if(packet.Type=="snapshot"&&packet.Snapshot!=null&&packet.Snapshot.Revision>=snapshot.Revision)
                     {snapshot=packet.Snapshot;Invoke(SnapshotChanged,snapshot);}
+                    else if(packet.Type=="snapshot")continue;
                     else if(packet.Type=="error")Invoke(ErrorReceived,packet.Text??"The room command failed.");
                     else if(packet.Type=="takeover"&&packet.Snapshot!=null)
                     {

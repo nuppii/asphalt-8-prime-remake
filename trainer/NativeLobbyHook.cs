@@ -58,6 +58,26 @@ internal static class NativeLobbyHook
         return code.ToArray();
     }
 
+    internal static byte[] BuildBotRaceAlone(long module, long cave)
+    {
+        if (StateAddress == 0) throw new InvalidOperationException("Native lobby state is not installed.");
+        long predicate = StateAddress - StateOffset + ImageOffset + ExportRva("NativeSoloBotRace");
+        var code = new List<byte>(InjectionHack.Hex("9C 60 68"));
+        code.AddRange(BitConverter.GetBytes(unchecked((int)module)));
+        Action<byte, long> branch = (opcode, target) =>
+        {
+            code.Add(opcode);
+            code.AddRange(BitConverter.GetBytes(unchecked((int)(target - (cave + code.Count + 4)))));
+        };
+        branch(0xe8, predicate);
+        code.AddRange(InjectionHack.Hex("83 C4 04 85 C0 74 07 61 9D"));
+        branch(0xe9, module + 0xD555EF); // Reset the original alone timer.
+        code.AddRange(InjectionHack.Hex("61 9D 8B CF")); // Restore state and replay displaced code.
+        branch(0xe8, module + 0x83CC20);
+        branch(0xe9, module + 0xD5559F);
+        return code.ToArray();
+    }
+
     private static byte[] LoadImage()
     {
         using (Stream resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("NativeLobbyUi.x86"))

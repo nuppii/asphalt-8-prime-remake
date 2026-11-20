@@ -358,6 +358,17 @@ internal static class InjectionCatalog
             if(NativeLobbyHook.StateAddress==0)throw new InvalidOperationException("Native lobby state is not installed.");
             return Code(cave,Raw("68 "+I32(unchecked((int)(NativeLobbyHook.StateAddress+212)))),Jmp(cave+5,module+0xA9B1BC));
         });
+    internal static readonly InjectionHack NativeRoomCapacity = new InjectionHack("Native Room Capacity",
+        0xA9B1AF, "89 45 E8 8B 01 89 45 E4", (module, cave) =>
+        {
+            if (NativeLobbyHook.StateAddress == 0) throw new InvalidOperationException("Native lobby state is not installed.");
+            // EAX becomes the original event-limited capacity. Lower it only.
+            // Lobby::Create rejects 1, so a positive request uses at least 2.
+            byte[] body = Raw("89 45 E8 8B 01 9C 52 8B 15 " +
+                I32(unchecked((int)(NativeLobbyHook.StateAddress + 36))) +
+                " 85 D2 74 10 83 FA 3C 77 0B 83 FA 01 75 01 42 3B D0 0F 42 C2 5A 9D 89 45 E4");
+            return Code(cave, body, Jmp(cave + body.Length, module + 0xA9B1B7));
+        });
     internal static readonly InjectionHack NativeClassicLaps = new InjectionHack("Native Classic Laps",
         0x96DB9F,"83 C6 28 83 7E 14 10",(module,cave)=>
         {
@@ -377,6 +388,54 @@ internal static class InjectionCatalog
         });
     internal static readonly InjectionHack NativeDirectDiscovery = new InjectionHack("Native Direct Discovery",
         0x110CE75,"8B 4E 04 8B 01 FF 50 1C",NativeLobbyHook.BuildDiscovery);
+    internal static readonly InjectionHack NativeBotRaceLaunch = new InjectionHack("Native Bot Race Launch",
+        0xA99313, "83 F9 01 76 09", BuildNativeBotRaceLaunch);
+    internal static readonly InjectionHack NativeBotRaceAlone = new InjectionHack("Native Bot Race Alone",
+        0xD55598, "8B CF E8 81 76 AE FF", NativeLobbyHook.BuildBotRaceAlone);
+
+    private static byte[] BuildNativeBotRaceLaunch(long module, long cave)
+    {
+        var code = new List<byte>();
+        var reject = new List<int>();
+        Action<string> emit = bytes => code.AddRange(Raw(bytes));
+        Action<byte> jumpToDisabled = opcode =>
+        {
+            code.Add(opcode);
+            reject.Add(code.Count);
+            code.Add(0);
+        };
+
+        // The two continuations set the original Launch eligibility byte.
+        // Preserve the stock multiplayer branch for more than one human.
+        emit("83 F9 01");
+        emit("77 00");
+        int stockEnabled = code.Count - 1;
+        jumpToDisabled(0x72);
+        emit("80 BB 84 02 00 00 01"); // This screen owns the room.
+        jumpToDisabled(0x75);
+        emit("80 BB 88 02 00 00 01"); // Native Fill with AI is active.
+        jumpToDisabled(0x75);
+        emit("81 3F " + I32(unchecked((int)(module + 0x1D6A510))));
+        jumpToDisabled(0x75);
+        emit("83 7F 5C 02");
+        jumpToDisabled(0x72);
+        emit("83 7F 5C 0C");
+        jumpToDisabled(0x77);
+
+        // EAX is live at the original call site. Restore it before branching.
+        emit("50 8B 83 78 02 00 00 85 C0 74 09 83 78 10 00 58");
+        jumpToDisabled(0x75);
+        emit("EB 03 58 EB 00");
+        int nullEvent = code.Count - 1;
+        int enabled = code.Count;
+        code.AddRange(Jmp(cave + enabled, module + 0xA99318));
+        int disabled = code.Count;
+        code.AddRange(Jmp(cave + disabled, module + 0xA99321));
+        code[stockEnabled] = (byte)(enabled - stockEnabled - 1);
+        code[nullEvent] = (byte)(disabled - nullEvent - 1);
+        foreach(int offset in reject) code[offset] = (byte)(disabled - offset - 1);
+        return code.ToArray();
+    }
     private static readonly Dictionary<string, int> Values = new Dictionary<string, int>
     {
         { "Credits", 10000000 }, { "Nitro Ratio", BitConverter.ToInt32(BitConverter.GetBytes(8.0f), 0) },
