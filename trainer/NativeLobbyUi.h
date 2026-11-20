@@ -24,7 +24,8 @@ enum NativeUiRequest {
     NUI_REQUEST_ADD_FRIEND=11, NUI_REQUEST_ACCEPT_FRIEND=12,
     NUI_REQUEST_REJECT_FRIEND=13, NUI_REQUEST_INVITATIONS=14,
     NUI_REQUEST_ACCEPT_INVITE=15, NUI_REQUEST_DISMISS_INVITE=16,
-    NUI_REQUEST_FRIEND_REQUESTS=17, NUI_REQUEST_COPY_PLAYER_ID=18
+    NUI_REQUEST_FRIEND_REQUESTS=17, NUI_REQUEST_COPY_PLAYER_ID=18,
+    NUI_REQUEST_PREVIOUS_ROOMS=19, NUI_REQUEST_NEXT_ROOMS=20, NUI_REQUEST_JOIN_PASSWORD=21
 };
 enum NativeUiPolicy {
     NUI_MUTATORS=1, NUI_CHEATS=2, NUI_OWNED_CARS=4,
@@ -38,7 +39,8 @@ enum NativeUiField {
 enum NativeUiBridge {
     NUI_BRIDGE_POLICY=1, NUI_BRIDGE_DISCOVERY=2,
     NUI_BRIDGE_FRIENDS=4, NUI_BRIDGE_NICKNAME=8,
-    NUI_BRIDGE_PRIVATE=16, NUI_BRIDGE_DIRECT_QUERY=32
+    NUI_BRIDGE_PRIVATE=16, NUI_BRIDGE_DIRECT_QUERY=32,
+    NUI_BRIDGE_PREVIOUS_ROOMS=64, NUI_BRIDGE_NEXT_ROOMS=128
 };
 #pragma pack(push,4)
 typedef struct NativeUiEntry { char label[80]; char id[64]; } NativeUiEntry;
@@ -58,7 +60,7 @@ typedef struct NativeUiState {
      * Explicit Paste clears roomCount and temporarily uses the first 1024
      * room bytes as keyboard-only text; statusCode 200 publishes completion. */
     unsigned roomCount, selectedRoom, friendCount, selectedFriend;
-    unsigned resultsRevision;
+    unsigned protectedRoomMask;
     NativeUiEntry rooms[8];
     NativeUiEntry friends[8];
 } NativeUiState;

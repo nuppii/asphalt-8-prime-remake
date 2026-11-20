@@ -23,4 +23,12 @@ typedef struct NativeNetworkState {
 #pragma pack(pop)
 typedef char NativeNetworkSizeMustMatch[(sizeof(NativeNetworkState)==NATIVE_NETWORK_BYTES)?1:-1];
 static NativeNetworkState *NativeNetwork(NativeUiState *ui){return (NativeNetworkState*)((unsigned char*)ui+NATIVE_NETWORK_OFFSET);}
+
+#define NATIVE_PASSWORD_OFFSET 0x1020U
+typedef struct NativePasswordState {
+    volatile unsigned enabled, hostReady, guestReady;
+    unsigned char hostKey[32], guestKey[32], nonceSeed[16];
+    unsigned joinLow, joinHigh, result, joinUsePassword;
+} NativePasswordState;
+static NativePasswordState *NativePassword(NativeUiState *ui){return (NativePasswordState*)((unsigned char*)ui+NATIVE_PASSWORD_OFFSET);}
 #endif

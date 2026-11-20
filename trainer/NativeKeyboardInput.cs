@@ -17,6 +17,8 @@ internal sealed class NativeKeyboardInput : IDisposable
     private readonly StringBuilder translated = new StringBuilder(16);
     private IntPtr hook, gameWindow;
     private int pid, editToken;
+    private int tabPid;
+    private bool tabHeld;
     private uint gameThread;
     private bool sending;
     private string accent;
@@ -51,8 +53,15 @@ internal sealed class NativeKeyboardInput : IDisposable
         IntPtr foreground = GetForegroundWindow();
         int process;
         byte[] state;
-        if (foreground == IntPtr.Zero || !NativeInjectionEngine.ReadNativeLobbyState(out process, out state)
-            || !NativeNetworkState.Valid(state) || BitConverter.ToInt32(state, 28) != 4)
+        if (!NativeInjectionEngine.ReadNativeLobbyState(out process, out state))
+        {
+            tabPid=0;tabHeld=false;Reset();return;
+        }
+        bool tab=foreground!=IntPtr.Zero&&Down(9)&&BitConverter.ToInt32(state,NativeNetworkState.EditToken)==0&&IsGameWindow(foreground,process);
+        if((process!=tabPid||tabHeld!=tab)&&
+           NativeInjectionEngine.WriteNativeLobbyState(process,NativeNetworkState.RaceTabHeld,BitConverter.GetBytes(tab?1:0)))
+        {tabPid=process;tabHeld=tab;}
+        if (foreground == IntPtr.Zero || !NativeNetworkState.Valid(state) || BitConverter.ToInt32(state, 28) != 4)
         {
             Reset();
             return;
@@ -99,6 +108,20 @@ internal sealed class NativeKeyboardInput : IDisposable
             return;
         pending.Dequeue();
         sending = code == Command || code == Command + 1;
+    }
+
+    private static bool IsGameWindow(IntPtr window,int process)
+    {
+        int owner;GetWindowThreadProcessId(window,out owner);
+        if(owner==process)return true;
+        bool game=false;
+        EnumChildWindows(window,(child,_)=>
+        {
+            int childOwner;GetWindowThreadProcessId(child,out childOwner);
+            game=childOwner==process&&IsWindowVisible(child);
+            return !game;
+        },IntPtr.Zero);
+        return game;
     }
 
     private IntPtr OnKey(int status, IntPtr message, IntPtr data)

@@ -9,6 +9,9 @@ using System.Windows.Forms;
 
 internal static class Program
 {
+    internal static readonly bool InternetHosting = Array.Exists(Environment.GetCommandLineArgs(), arg =>
+        string.Equals(arg, "--internet-host", StringComparison.OrdinalIgnoreCase));
+
     [STAThread]
     private static void Main()
     {
@@ -62,7 +65,7 @@ internal sealed class TrainerContext : ApplicationContext
             })
         };
         tray.DoubleClick += (_, __) => trainer.ToggleVisible();
-        nativeLobby = new NativeLobbyBridge();
+        nativeLobby = new NativeLobbyBridge(Program.InternetHosting);
         nativeKeyboard = new NativeKeyboardInput();
         LaunchGame();
     }
@@ -1974,6 +1977,23 @@ internal sealed class TrainerForm : Form
             Log("Native Classic laps: " + multiplayerError);
         else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeDirectDiscovery,true,out multiplayerError))
             Log("Native direct discovery: " + multiplayerError);
+        else if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeSendProfile,true,out multiplayerError)||
+                !NativeInjectionEngine.Toggle(InjectionCatalog.NativeAuthorizeProfile,true,out multiplayerError)||
+                !NativeInjectionEngine.WriteNativeLobbyState(pid,NativeNetworkState.PasswordEnabled,BitConverter.GetBytes(1)))
+            Log("Native password hooks unavailable: " + multiplayerError);
+        if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeCaptureRaceBoard,true,out multiplayerError))
+            Log("Native race standings snapshot: " + multiplayerError);
+        if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeRaceHudText,true,out multiplayerError)||
+           !NativeInjectionEngine.Toggle(InjectionCatalog.NativeRaceHudPosition,true,out multiplayerError)||
+           !NativeInjectionEngine.Toggle(InjectionCatalog.NativeRaceHudAvailability,true,out multiplayerError))
+            Log("Native race standings HUD: " + multiplayerError);
+        if (Program.InternetHosting)
+        {
+            if (NativeInjectionEngine.EnableInternetHostPorts(pid, out multiplayerError))
+                Log("Internet hosting: fixed native lobby and race port requests installed.");
+            else
+                Log("Internet hosting unavailable: " + multiplayerError);
+        }
 #if EXPERIMENTAL_BOT_RACE
         if(!NativeInjectionEngine.Toggle(InjectionCatalog.NativeBotRaceAlone,true,out multiplayerError))
             Log("Native bot race alone dialog: " + multiplayerError);

@@ -3,6 +3,9 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading.Tasks;
 using OfflineLab.Multiplayer;
 
 internal static class NativeInjectionEngine
@@ -11,7 +14,7 @@ internal static class NativeInjectionEngine
     internal static bool NativeDirectDiscoveryReady(int pid){return DirectReady;}
     internal static byte[] State=new byte[NativeNetworkState.BufferBytes];internal static int Pid=111;
     internal static bool ReadNativeLobbyState(out int pid,out byte[] state){pid=Pid;state=(byte[])State.Clone();return true;}
-    internal static void WriteNativeLobbyState(int pid,int offset,byte[] data){if(pid!=Pid)throw new Exception("Stale process write.");Buffer.BlockCopy(data,0,State,offset,data.Length);}
+    internal static bool WriteNativeLobbyState(int pid,int offset,byte[] data){if(pid!=Pid)throw new Exception("Stale process write.");Buffer.BlockCopy(data,0,State,offset,data.Length);return true;}
     internal static bool QueueDriverName(string name,out string error){error=null;return true;}
 }
 internal static class NativeBridgeCheck
@@ -27,11 +30,42 @@ internal static class NativeBridgeCheck
     {Word(20,kind);Word(12,Word(12)+1);Tick(bridge);}
     private static void Await(NativeLobbyBridge bridge,Func<bool> ready)
     {for(int i=0;i<300;i++){Thread.Sleep(20);Tick(bridge);if(ready())return;}throw new Exception("Bridge operation timed out: "+Text(52,160));}
+    private static void ScoreRelay()
+    {
+        const ulong room=0x1122334455667788UL;
+        byte[] board=new byte[NativeNetworkState.RaceBoardBytes],key=new byte[32];
+        key[0]=77;
+        Action<int,int> set=(offset,value)=>Buffer.BlockCopy(BitConverter.GetBytes(value),0,board,offset,4);
+        set(0,2);set(4,0x38444352);Buffer.BlockCopy(BitConverter.GetBytes(room),0,board,8,8);
+        set(16,3);set(40,2);set(44,57);set(96,1);set(100,-1);set(152,3);set(156,-1);set(board.Length-4,2);
+        Check(NativeRaceScoreBridge.Valid(board,0,room),"Native standings record was rejected.");
+        var listener=new TcpListener(IPAddress.Loopback,0);listener.Start(1);
+        try
+        {
+            int port=((IPEndPoint)listener.LocalEndpoint).Port;
+            for(int attempt=0;attempt<3;++attempt)
+            {
+                byte[] supplied=attempt==0?null:attempt==1?new byte[32]:(byte[])key.Clone();
+                var server=Task.Run(()=>NativeRaceScoreBridge.Send(listener.AcceptTcpClient(),room,(byte[])key.Clone(),board));
+                byte[] received=NativeRaceScoreBridge.Get(IPAddress.Loopback,room,supplied,port);
+                Check(server.Wait(2000),"Scoreboard handshake did not finish.");
+                if(attempt<2)Check(received==null,"Protected telemetry accepted missing or incorrect credentials.");
+                else Check(received!=null&&BitConverter.ToInt32(received,44)==57,"Guest did not receive the original host RTT.");
+            }
+            var publicServer=Task.Run(()=>NativeRaceScoreBridge.Send(listener.AcceptTcpClient(),room,null,board));
+            Check(NativeRaceScoreBridge.Get(IPAddress.Loopback,room,null,port)!=null,"Public scoreboard did not return the authoritative record.");
+            Check(publicServer.Wait(2000),"Public telemetry send did not finish.");
+            Check(!NativeRaceScoreBridge.Valid(board,0,room+1),"Wrong-race telemetry was accepted.");
+        }
+        finally{listener.Stop();}
+    }
+
     [STAThread] public static int Main(string[] args)
     {
         string folder=Path.Combine(Path.GetTempPath(),"a8-native-social-test-"+Guid.NewGuid().ToString("N"));
         try
         {
+            ScoreRelay();
             if(args.Length!=1||!new Uri(args[0]).IsLoopback)throw new Exception("A local test service URL is required.");
             SocialIdentity peerIdentity=SocialClient.Register(new Uri(args[0]),"Test peer");
             var peer=new SocialClient(new Uri(args[0]),peerIdentity);string localId;
@@ -48,10 +82,43 @@ internal static class NativeBridgeCheck
                     Check(Word(48)==300&&Word(1460)==0&&Word(1464)==-1,"Search did not clear old selection while loading.");
                     Await(bridge,()=>Word(48)==301);
                     Check(Word(1460)==1&&Word(1464)==-1&&Text(1480,80).Contains("4/4  FULL")&&Text(1560,64)==listing.RoomId,"Dropdown results or explicit-selection state differ from the directory.");
+                    Await(bridge,()=>Text(1480,80).EndsWith(" ms")&&!Text(1480,80).EndsWith("-- ms"));
+                    Text(308,64,"");Request(bridge,2);Await(bridge,()=>Word(48)==301);
+                    Check(Word(1460)>0&&Text(1560,64)==listing.RoomId,"An empty search did not browse the directory.");
                     Text(308,64,"No match "+Guid.NewGuid().ToString("N"));Request(bridge,2);Await(bridge,()=>Word(48)==302);
                     Check(Word(1460)==0&&Word(1464)==-1,"Empty search kept a stale room selection.");
                     Text(308,64,searchName);Request(bridge,2);Text(308,64,"Changed while searching");Await(bridge,()=>Word(48)==306);
                     Check(Word(1460)==0&&Word(1464)==-1,"Stale query completion repopulated the dropdown.");
+                }
+                string prefix="Paging "+Guid.NewGuid().ToString("N");
+                var pageAds=new PublicRoomAdvertiser[5];
+                try
+                {
+                    for(int i=0;i<pageAds.Length;i++)
+                    {
+                        var row=new LanRoomListing{RoomId=Guid.NewGuid().ToString("N"),Name=prefix+" "+i,Address="127.0.0.1",Port=47781,Players=1,Capacity=8};
+                        pageAds[i]=new PublicRoomAdvertiser(new Uri(args[0]),()=>row);
+                    }
+                    Await(bridge,()=>PublicRoomDirectory.SearchPage(new Uri(args[0]),prefix,4,0,true).TotalMatches==5);
+                    Text(308,64,prefix);Request(bridge,2);Await(bridge,()=>Word(48)==301);
+                    string first=Text(1560,64);
+                    Check(Word(1460)==4&&(Word(44)&192)==128,"First page did not expose the remaining rooms.");
+                    Word(1464,0);Request(bridge,20);Await(bridge,()=>Word(48)==301);
+                    Check(Word(1460)==1&&Word(1464)==-1&&(Word(44)&192)==64&&Text(1560,64)!=first,"Next page reused stale rows or selection.");
+                    Request(bridge,19);Await(bridge,()=>Word(48)==301);
+                    Check(Word(1460)==4&&(Word(44)&192)==128&&Text(1560,64)==first,"Previous page did not return to the original results.");
+                }
+                finally{foreach(var advertiser in pageAds)if(advertiser!=null)advertiser.Dispose();}
+                string lockedName="Locked "+Guid.NewGuid().ToString("N");
+                using(var locked=RoomClient.Create(lockedName,new PlayerProfile{Nickname="Host"},new RoomSettings{GridSlots=4},"test-password",0))
+                using(var advertisement=new PublicRoomAdvertiser(new Uri(args[0]),()=>locked.HostedServer.CreateListing(true)))
+                {
+                    Await(bridge,()=>PublicRoomDirectory.Search(new Uri(args[0]),lockedName).Count==1);
+                    Text(308,64,lockedName);Request(bridge,2);Await(bridge,()=>Word(48)==301);
+                    Check(Text(1480,80).Contains("TCP  [LOCKED]")&&Word(1476)==1&&Word(NativeNetworkState.JoinableMask)==0,
+                        "A protected control room was unmarked or offered as a playable native room.");
+                    Text(308,64,"Missing locked "+Guid.NewGuid().ToString("N"));Request(bridge,2);Await(bridge,()=>Word(48)==302);
+                    Check(Word(1476)==0,"A new search retained a stale protected-room marker.");
                 }
                 Request(bridge,3);Await(bridge,()=>Text(52,160).Contains("Your player ID:"));
                 localId=Text(52,160).Split(new[]{"Your player ID: "},StringSplitOptions.None)[1];
@@ -121,7 +188,36 @@ internal static class NativeBridgeCheck
                 Word(NativeNetworkState.HostRevision,3);Word(NativeNetworkState.HostEndRevision,3);Word(NativeNetworkState.HostAlive,0);Tick(native);Thread.Sleep(100);
                 Check(PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture").Count==1,"In-progress native observation withdrew a live advertisement.");
                 Word(NativeNetworkState.HostRevision,4);Word(NativeNetworkState.HostEndRevision,4);Word(NativeNetworkState.HostAlive,1);Word(NativeNetworkState.HostPrivate,1);Tick(native);Await(native,()=>PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture").Count==0);
+                Word(NativeNetworkState.PasswordEnabled,1);
+                Text(372,64,"fixture-password");Request(native,6);
+                Check(Word(NativeNetworkState.HostPasswordReady)==1&&Text(372,64)=="","The host password was not set or remained in the editor.");
+                Await(native,()=>PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture").Count==1);
+                Text(308,64,"Native publication fixture");Request(native,2);Await(native,()=>Word(48)==301);
+                Check(Word(1476)==1&&Word(NativeNetworkState.JoinableMask)==1,"Password-protected native room was not marked as joinable and locked.");
+                Word(1464,0);Request(native,7);
+                Check(Text(52,160).Contains("Set the join password")&&Word(NativeNetworkState.JoinSeq)==1,"Directory join proceeded without a password.");
+                Text(372,64,"fixture-password");Request(native,21);
+                Check(Word(NativeNetworkState.GuestPasswordReady)==1&&Text(372,64)=="","The join password was not set or remained in the editor.");
+                Request(native,7);Await(native,()=>Word(NativeNetworkState.JoinSeq)==2);
+                Check(Word(NativeNetworkState.JoinUsePassword)==1,"The native join did not request password proof.");
                 Word(NativeNetworkState.HostAlive,0);Text(436,1024,"");Request(native,10);
+            }
+            using(var internetHost=new NativeLobbyBridge(folder,false,true))
+            {
+                Tick(internetHost);Text(436,1024,args[0]);Request(internetHost,10);Await(internetHost,()=>(Word(44)&4)!=0);
+                string roomName="Internet bind "+Guid.NewGuid().ToString("N");
+                Text(NativeNetworkState.HostName,64,roomName);
+                Word(NativeNetworkState.HostPrivate,0);Word(NativeNetworkState.HostAlive,1);
+                Word(NativeNetworkState.HostLobbyPort,NativeNetworkState.InternetLobbyPort);
+                Tick(internetHost);
+                var directory=new Uri(args[0]);
+                Await(internetHost,()=>PublicRoomDirectory.Search(directory,roomName).Count==1);
+                Check(PublicRoomDirectory.Search(directory,roomName)[0].Port==NativeNetworkState.InternetLobbyPort,
+                    "Internet hosting did not publish the observed fixed lobby port.");
+                Word(NativeNetworkState.HostLobbyPort,49002);
+                Tick(internetHost);
+                Await(internetHost,()=>PublicRoomDirectory.Search(directory,roomName).Count==0);
+                Word(NativeNetworkState.HostAlive,0);Text(436,1024,"");Request(internetHost,10);
             }
             NativeInjectionEngine.DirectReady=false;
             File.WriteAllText(Path.Combine(folder,"native-profile.json"),"{\"Policy\":20,\"Grid\":0,\"Laps\":0,\"RoomName\":\"Test\",\"Nickname\":\"Driver\",\"DirectoryUrl\":\"https://[broken\"}");

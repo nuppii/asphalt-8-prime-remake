@@ -2,7 +2,7 @@
 
 The intended race server is the current player's PC. A dedicated game server or rented VPS is not a prerequisite. On a graceful host change, the race must pause, transfer to another player's PC and resume from the acknowledged state. Changing a label or transferring the experimental TCP lobby does not satisfy this requirement.
 
-**Current limit:** automatic publication of an actual native room and selected-directory dispatch into the original browser have been observed locally. No native peer joined, and no Internet race, NAT solution or native race migration has been established.
+**Current limit:** the opt-in Internet host mode requests fixed UDP ports so a reachable IPv4 router can forward the original game protocol. The port hooks have passed isolated checks. A native peer connection, Internet race, and race-host migration still require separate validation.
 
 ## Discovery and hosting are separate
 
@@ -10,7 +10,27 @@ Direct address / invitation connections must work without the optional directory
 
 As a local comparison, the installed Unreal Tournament configuration includes player-hosted networking and several `UdpServerUplink` / `ListFactories` master-server entries. Those entries advertise/find servers; they are not evidence that a third-party machine hosts a player's match or that UT's race/state migration exists in Asphalt.
 
-Without an external directory, a direct invitation needs a reachable address or endpoint information exchanged outside the game. A room name alone cannot discover an arbitrary remote machine. Direct Internet connectivity also depends on the host network: a public endpoint or suitable NAT traversal is needed. An inaccessible CGNAT/restrictive network cannot be guaranteed reachable by changing a game menu. No router, firewall or Windows isolation setting is changed by these tools.
+Without an external directory, share the host's reachable public IPv4 address. Room-name search uses a configured directory. Direct hosting requires inbound UDP reachability to the host, which may depend on the network operator. The installer updates the game's declared networking capabilities. The launcher does not edit router or firewall rules.
+
+In **Multiplayer → Find by Name**, leave the search field empty and select **Search Directory** to browse active public listings. Enter the beginning of a room name to filter the results. The arrows are labelled **Previous Page** and **Next Page**. The listing shows occupancy and host ping in milliseconds. Host ping measures the IPv4 ICMP round trip from the browsing PC. If the host or its router does not answer, the row shows `-- ms`. A measured value does not establish that the lobby or race UDP ports are reachable.
+
+The native password build adds an original Asphalt padlock beside protected directory rows. The host sets **Edit Private Password**, enables **Private Room**, and creates a room. A configured directory publishes the room once the host's password hooks and session key are ready. Guests set **Set Join Password** in **Find by Name**, then select the listed room or use **Join by IPv4 Address**. Native host admission checks the join proof in both cases. The password stays session-only. The directory stores the protection flag and protocol version. The players use the same UDP ports as public rooms.
+
+The native password proof is bound to the room, player identity and a short-lived timestamp and nonce. The two PCs need synchronized clocks. The proof is not a password-authenticated encrypted channel. An observer with a capture can test password guesses offline, so use a distinct room password. The isolated runner exercises the generated send and admission callbacks, but two-instance game networking and in-game visual validation are still pending.
+
+Hold **TAB** in a supported race to request the native standings. Classic, Battle and Infected use the hooked original sorter. The host copies its measured game-transport RTT for each connected driver. The host row displays **HOST**, AI rows omit ping, and unavailable samples display `-- ms`. Every guest receives the same host-measured table.
+
+Guests retrieve the table directly from the host trainer over **TCP 6540**. Internet hosts behind NAT need this TCP port forwarded for guest standings, in addition to the existing UDP game ports. The tracker opens the read-only TCP listener while a current native race snapshot is available. Private rooms require a password proof for this channel too. No directory service is involved in relaying race data. The native renderer and two-peer in-game behavior still require live validation.
+
+## Test on two Internet connections
+
+1. Install from this revision with `scripts/Install-Offline.ps1`. The installer keeps the game executable at 4.8.0.7 and registers package revision 4.8.0.9 with inbound Internet capability. The host and guest need the compatible game installation. Use the current launcher on both.
+2. On the host's router, forward **UDP 6529, 6530 and 6540** to the host PC's LAN IPv4 address, preserving the port numbers. The discovery listener uses 6529, lobby admission uses 6530, and the race server requests 6540. A host with a directly reachable IPv4 address can skip router forwarding. Carrier-grade NAT or a second upstream NAT can prevent these forwards from being reachable.
+3. Close any existing game and trainer on the host, then run `& '.\Asphalt 8 Airborne 4.8.exe' --internet-host` in PowerShell from the game folder. Create a public Classic room and enable AI fill. The launcher log records whether the bind hooks were activated. The normal launch keeps the game's original port selection.
+4. On the second Internet connection, open **Multiplayer → Find by Name**. Enter the host's public IPv4 address and select **Join by IPv4 Address**. With a configured directory on both sides, search for the room name and select its native listing instead. Check that both games show the same two human players before launching.
+5. Start the race from the host. Check the start and the same human and AI grid on both games, then drive both cars and verify that their motion is synchronized. The port changes do not implement bot takeover during a running race.
+
+Hosting mode preserves the original packet format and admission flow. Both signature-checked bind hooks must install before the fixed requests are enabled. The directory advertises only the actual lobby port reported by the game and suppresses publication in this mode if that port differs from 6530. A published listing does not test the router or establish race connectivity.
 
 The reference protocols are [STUN (RFC 8489)](https://www.rfc-editor.org/rfc/rfc8489.html) for observed UDP endpoints and [ICE (RFC 8445)](https://www.rfc-editor.org/rfc/rfc8445) for candidate exchange and connectivity checks. Relay fallback is a separate, optional infrastructure decision; STUN alone is not a relay, peer authentication or a guarantee of Internet connectivity.
 
@@ -41,13 +61,13 @@ The local fixture checks IPv4/IPv6 decoding, all truncation lengths of both samp
 
 The installed native **Find by Name** page now also contains **JOIN BY IPV4 ADDRESS**. Edit the Search field with a four-octet IPv4 address, confirm, then choose that action. Confirmation only edits the field; directory search requires its explicit button. No directory URL is needed for the direct action. The button is enabled only when the targeted native discovery hook is installed.
 
-This uses the game's existing directed discovery callback, not a fabricated room or a global rewrite of outgoing packets. Only the currently requested native browser Finder uses the explicit destination, UDP 6529. Other discovery paths retain their original behavior. Results must have the requested observed IPv4 sender, and the original native Join callback is used only for a unique matching room. Multiple matches remain a manual browser choice. Leaving the browser, dispatching a join, invalid input or reaching the 900-UI-tick bound cancels the attempt and restores default discovery.
+Only the current native browser Finder uses the explicit destination on UDP 6529. Results must have the requested observed IPv4 sender, a native room identity, and a reported lobby port. The original Join callback is used for a unique match. Multiple matches remain a manual browser choice. Leaving the browser, invalid input, or reaching the 900-UI-tick bound restores default discovery. Dispatch also ends directed discovery and waits for the native lobby to acknowledge the same room identity and port.
 
 The compiled x86 fixture exercises the actual generated wrapper and native helper in owned memory, with stubs for original game callbacks: address parsing and encoding, active versus default discovery, foreign-Finder fallback, cancellation and expiry. A clean installed game session without Frida verified the visible enabled action, native keyboard confirmation, and rejection of empty/invalid input. These checks do **not** establish that a remote host responded, that a native peer joined or that an Internet race ran.
 
 ![Installed native IPv4 action rejecting invalid input](images/native-direct-ipv4.jpg)
 
-Discovery alone is insufficient through many routers. Static native analysis identifies three separate endpoints: Announcer UDP 6529, the ephemeral lobby port stored at Room+0x78, and the race port at Room+0x7A published after native server start. Those real endpoints need reachability and correct advertisement; no automatic router mapping or native socket hole punching is shipped.
+Discovery alone is insufficient through many routers. The game advertises the bound lobby port at Room+0x78 and the bound race port at Room+0x7A after the native server starts. The fixed bind requests make the manual forwarding rules available before startup. Automatic router mapping and native hole punching remain unimplemented.
 
 ## Native directory publication and selected joining
 
@@ -64,7 +84,7 @@ The latest local checks passed 23 Python integration tests and an isolated nativ
 ## Native work still required
 
 1. Validate the new directed discovery against a real remote native host, including response selection and original eligibility checks.
-2. Establish the actual game sockets across the selected route, including ports negotiated after discovery. Redirecting multicast queries alone does not establish this.
+2. Validate the fixed lobby and race binds and synchronized driving across the forwarded network path.
 3. Check peer reachability on the exact sockets used for gameplay before declaring a room join successful. UDP endpoint observations cannot describe the separate experimental TCP room listener.
 4. During handover, pause at an authoritative tick and transfer the map/event, cars and tuning, positions and velocities, laps/checkpoints, race clock, results, bot state and applicable random state.
 5. Start the successor's native server on its own PC, establish its reachable route, import the checkpoint and obtain acknowledgements from the surviving players before resuming under a new authority epoch.

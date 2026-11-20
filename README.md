@@ -1,10 +1,20 @@
 # Asphalt 8 Offline Lab
 
-**A source-available offline launcher and Insert-key trainer for Asphalt 8: Airborne, Windows x86 build 4.8.0.7.**
+**An open-source offline launcher and Insert-key trainer for Asphalt 8: Airborne, Windows x86 build 4.8.0.7.**
 
 Keep a local copy of the classic game playable, customize solo races, and manage the garage through a translucent English overlay. The community cheat tables call this release **4.8.0h**; compatibility is checked against the actual executable, rather than the display name alone.
 
-> This is an independent preservation and experimentation project. You must provide your own compatible game installation. Game executables, assets, accounts and save files are not distributed here. The original online services are not restored.
+This independent project accepts your own original Windows 4.8.0.7 package or extracted files. A prior game installation is optional. The MIT license covers the project's code. The original game and its assets remain separate.
+
+## Install with one EXE
+
+1. Download **Asphalt8OfflineLab-Setup.exe** from [Releases](https://github.com/nuppii/asphalt8-offline-lab/releases).
+2. In Setup, choose your compatible Windows `.appx` or `.msix` package, or its already extracted game folder. Choose a parent folder for the new **Asphalt 8 Offline Lab** installation.
+3. Click **Install**, then open **Asphalt 8 Airborne 4.8.exe** in the new folder. Press **Insert** for the trainer.
+
+Setup includes the Windows trainer and its resource builder. Windows must already permit loose package registration and have the game's x86 `Microsoft.VCLibs.120.00` dependency. The engine stays on 4.8.0.7. Setup registers a separate offline package identity from the Microsoft Store release and has no updater. Setup does not change global Store settings or firewall rules. Player-hosted multiplayer can still use the network.
+
+The preview installer includes the Classic bot-race and TAB standings hooks. A real Classic race with bots was exercised locally. The installer build and two-human Internet racing have separate verification limits documented in [validation](docs/VALIDATION.md).
 
 ## Screenshots
 
@@ -55,10 +65,10 @@ Native directory publication and **JOIN SELECTED** are now connected to the orig
 
 See [the complete feature catalogue](docs/FEATURES.md) for tool names and important distinctions.
 
-## Requirements
+## Source build requirements
 
 - Windows with support for the original x86 UWP game and loose package registration.
-- Your own complete Windows **4.8.0.7** game folder, including its data, assets and manifest.
+- Your own complete Windows **4.8.0.7** game folder, including its data, assets and manifest, to install and play.
 - Python 3 for the offline executable patch script.
 - Visual Studio C++ Build Tools with the **x86** MSVC compiler/linker.
 - Windows .NET Framework 4.x C# compiler and WinForms assemblies.
@@ -72,7 +82,15 @@ The accepted original `Asphalt8.exe` SHA-256 is:
 
 Other releases, Android builds and newer game versions are unsupported. The installer preserves an original executable and manifest before patching the selected copy.
 
-## Build and install
+## Build from source
+
+To reproduce the release installer, install PyInstaller in the build Python environment, then run:
+
+```powershell
+.\scripts\Build-Setup.ps1 -MsvcBin '<your x86 MSVC compiler directory>'
+```
+
+The executable goes to `build/release`. The build does not read or embed a game package. The independent developer installer below also supports building and patching an extracted copy directly.
 
 1. Copy your complete compatible game into a dedicated directory. Keep your original installation and a backup of your local save.
 2. Clone this repository and open PowerShell in its root.
@@ -94,7 +112,7 @@ Asphalt 8 Airborne 4.8.exe
 
 Launch that executable and press **Insert**. You can create a Windows shortcut to it. The tray menu also exposes **Show / hide**, **Launch game** and **Exit trainer**.
 
-The Windows registration revision is 4.8.0.8 so an existing installation can pick up the display name. The engine is still the supported 4.8.0.7 build and the existing package family is used for local saves.
+The offline Windows registration revision is 4.8.0.9. The engine is still the supported 4.8.0.7 build. Existing installations of Offline Lab retain their offline package family.
 
 For an already registered offline copy, build just the trainer:
 

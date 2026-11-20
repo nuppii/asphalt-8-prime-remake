@@ -71,12 +71,6 @@ internal static class InviteCheck
             Reject<InvalidOperationException>(()=>RoomInvites.Join(stale,"test-only-secret",new PlayerProfile{Nickname="Stale"}),"An invitation joined a different room at the same endpoint.");
         }
     }
-    private static LanRoomListing Listing(RoomClient client)
-    {
-        RoomSnapshot state=client.Snapshot;
-        return new LanRoomListing{RoomId=state.RoomId,Name=state.Name,Address="127.0.0.1",Port=client.HostedServer.Port,
-            Players=state.Members.Count,Capacity=state.Settings.EffectiveGridSlots,IsPrivate=state.IsPrivate};
-    }
     private static void DirectoryTest(Uri directory)
     {
         if(!directory.IsLoopback)throw new ArgumentException("Integration checks are restricted to a local directory.");
@@ -85,10 +79,12 @@ internal static class InviteCheck
         using(RoomClient two=RoomClient.Create(name.ToUpperInvariant(),new PlayerProfile{Nickname="Two"},new RoomSettings{GridSlots=4},"",0))
         using(RoomClient full=RoomClient.Create(name+" Full",new PlayerProfile{Nickname="Full"},new RoomSettings{GridSlots=1},"",0))
         using(RoomClient hidden=RoomClient.Create(name+" Private",new PlayerProfile{Nickname="Hidden"},new RoomSettings{GridSlots=4},"private",0))
-        using(var advertiseOne=new PublicRoomAdvertiser(directory,()=>Listing(one)))
-        using(var advertiseTwo=new PublicRoomAdvertiser(directory,()=>Listing(two)))
-        using(var advertiseFull=new PublicRoomAdvertiser(directory,()=>Listing(full)))
-        using(var advertiseHidden=new PublicRoomAdvertiser(directory,()=>Listing(hidden)))
+        using(RoomClient locked=RoomClient.Create(name+" Locked",new PlayerProfile{Nickname="Locked"},new RoomSettings{GridSlots=4},"locked-test-secret",0))
+        using(var advertiseOne=new PublicRoomAdvertiser(directory,()=>one.HostedServer.CreateListing()))
+        using(var advertiseTwo=new PublicRoomAdvertiser(directory,()=>two.HostedServer.CreateListing()))
+        using(var advertiseFull=new PublicRoomAdvertiser(directory,()=>full.HostedServer.CreateListing()))
+        using(var advertiseHidden=new PublicRoomAdvertiser(directory,()=>hidden.HostedServer.CreateListing()))
+        using(var advertiseLocked=new PublicRoomAdvertiser(directory,()=>locked.HostedServer.CreateListing(true)))
         {
             Wait(()=>PublicRoomDirectory.SearchPage(directory,name).TotalMatches==2,"Both named room choices were not listed.");
             RoomSearchPage page=PublicRoomDirectory.SearchPage(directory,name.ToLowerInvariant(),1);
@@ -104,6 +100,16 @@ internal static class InviteCheck
             Reject<InvalidOperationException>(()=>RoomInvites.ResolveForJoin(RoomInvites.CreateDirectory(full.Snapshot.RoomId,full.Snapshot.Name,directory)),"Full public room was accepted for joining.");
             Check(PublicRoomDirectory.Search(directory,name+" Private").Count==0,"A private room was published.");
             Reject<InvalidOperationException>(()=>PublicRoomDirectory.Resolve(directory,hidden.Snapshot.RoomId),"A private room was resolved from the public directory.");
+            string lockedName=locked.Snapshot.Name;
+            string lockedId=locked.Snapshot.RoomId;
+            Wait(()=>PublicRoomDirectory.Search(directory,lockedName).Count==1,"The listed password-protected room is missing.");
+            Check(PublicRoomDirectory.Resolve(directory,lockedId).PasswordProtected,"The directory lost the password flag.");
+            var guest=new PlayerProfile{Nickname="Locked guest"};
+            Reject<InvalidOperationException>(()=>RoomInvites.JoinByName(directory,lockedName,lockedId,"",guest),"A password-protected room accepted an empty password.");
+            Reject<InvalidOperationException>(()=>RoomInvites.JoinByName(directory,lockedName,lockedId,"wrong",guest),"A password-protected room accepted an incorrect password.");
+            Reject<InvalidOperationException>(()=>RoomClient.Join("127.0.0.1",locked.HostedServer.Port,"",guest),"Direct connection bypassed the password.");
+            using(RoomClient selected=RoomInvites.JoinByName(directory,lockedName,lockedId,"locked-test-secret",guest))
+            {Check(selected.Snapshot.RoomId==lockedId,"The password-protected room did not accept the correct password.");}
             Reject<ArgumentException>(()=>PublicRoomDirectory.Search(directory,"  "),"Empty name search was accepted.");
         }
     }

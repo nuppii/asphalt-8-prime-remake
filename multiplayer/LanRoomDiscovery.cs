@@ -26,6 +26,8 @@ namespace OfflineLab.Multiplayer
         [DataMember] public int Players;
         [DataMember] public int Capacity;
         [DataMember] public bool IsPrivate;
+        [DataMember(EmitDefaultValue=false)] public bool PasswordProtected;
+        [DataMember(EmitDefaultValue=false)] public int NativePasswordVersion;
         [DataMember(EmitDefaultValue=false)] public string Transport;
         [DataMember(EmitDefaultValue=false)] public string NativeRoomId;
         [DataMember(EmitDefaultValue=false)] public int DiscoveryPort;
@@ -102,8 +104,8 @@ namespace OfflineLab.Multiplayer
         public static bool ValidTransport(LanRoomListing room)
         {
             if(room==null)return false;
-            if(room.EffectiveTransport==RoomTransports.RoomControlTcp)return room.NativeRoomId==null&&room.DiscoveryPort==0;
-            return room.IsNative&&room.NativeRoomId!=null&&Regex.IsMatch(room.NativeRoomId,@"\A[0-9a-fA-F]{16}\z")&&
+            if(room.EffectiveTransport==RoomTransports.RoomControlTcp)return room.NativeRoomId==null&&room.DiscoveryPort==0&&room.NativePasswordVersion==0;
+            return room.IsNative&&room.NativePasswordVersion==(room.PasswordProtected?1:0)&&room.NativeRoomId!=null&&Regex.IsMatch(room.NativeRoomId,@"\A[0-9a-fA-F]{16}\z")&&
                 room.DiscoveryPort==6529&&!string.Equals(room.RoomId,room.NativeRoomId,StringComparison.OrdinalIgnoreCase);
         }
 

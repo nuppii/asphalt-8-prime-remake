@@ -7,7 +7,7 @@ typedef void *(__fastcall *GetName)(void *,void *);
 typedef int (__fastcall *Flag)(void *,void *);
 typedef void (__fastcall *DestroyVector)(Vector *,void *);
 typedef void (__fastcall *Click)(void *,void *,void *,void *);
-static struct Pending { U module,ticks,seen,active,direct,directory,awaiting,low,high,port; unsigned char destination[128]; char query[64]; } gLan;
+static struct Pending { U module,ticks,seen,active,direct,directory,awaiting,low,high,port,auth; unsigned char destination[128]; char query[64]; } gLan;
 static void *At(U m,U va){return(void*)(m+va-0x400000U);}
 static void *Virtual(void*p,U s){return *(void**)(*(U*)p+s);}
 static U Length(const char*p,U cap){U n=0;while(n<cap&&p[n])++n;return n;}
@@ -85,6 +85,12 @@ static U Begin(U module,void*local,NativeUiState*state,U direct,const char *quer
     button=*(void**)((char*)local+0x26c);control=*(void**)((char*)local+0x270);
     if(!button||!control){Status(state,203,"Native LAN browser is not ready.");return 0;}
     Copy(gLan.query,query,sizeof(gLan.query));gLan.module=module;gLan.ticks=0;gLan.seen=0;gLan.direct=direct!=0;gLan.directory=direct==2;gLan.awaiting=0;gLan.active=1;
+    gLan.auth=0;
+    if(NativePassword(state)->enabled==1){
+        NativePasswordState *password=NativePassword(state);
+        password->joinLow=0;password->joinHigh=0;password->result=0;
+        gLan.auth=gLan.directory?password->joinUsePassword:password->guestReady;
+    }
     if(gLan.directory){NativeNetworkState *network=NativeNetwork(state);gLan.low=network->joinIdLow;gLan.high=network->joinIdHigh;gLan.port=network->joinLobbyPort;network->joinPhase=NJ_DISCOVERING;}
     Status(state,204,direct?"Opening native browser; querying the explicit IPv4 host.":"Opening native LAN browser; looking for an exact room name.");
     Retain(control);((Click)At(module,0xdc76e0))(local,0,button,control);return 1;
@@ -92,9 +98,14 @@ static U Begin(U module,void*local,NativeUiState*state,U direct,const char *quer
 U __cdecl NativeLanBegin(U module,void*local,NativeUiState*state){return Begin(module,local,state,0,state->query);}
 __declspec(dllexport) U __cdecl NativeLanBeginDirect(U module,void*local,NativeUiState*state){return Begin(module,local,state,1,state->query);}
 static int NetworkValid(NativeNetworkState *n){return n->magic==NATIVE_NETWORK_MAGIC&&n->version==NATIVE_NETWORK_VERSION&&n->size==sizeof(*n);}
-static void JoinFailed(NativeUiState *state,const char *message){gLan.active=0;if(gLan.directory)NativeNetwork(state)->joinPhase=NJ_FAILED;Status(state,211,message);}
+static void JoinFailed(NativeUiState *state,const char *message){
+    gLan.active=0;
+    if(gLan.auth){NativePassword(state)->joinLow=0;NativePassword(state)->joinHigh=0;}
+    if(gLan.directory)NativeNetwork(state)->joinPhase=NJ_FAILED;
+    Status(state,211,message);
+}
 void __cdecl NativeLanTick(U module,void*screen,NativeUiState*state){
-    void *finder;Vector v;U b,e,c,n,i,matches=0,low=0,high=0;NativeNetworkState *network;
+    void *finder;Vector v;U b,e,c,n,i,matches=0,low=0,high=0,port=0;NativeNetworkState *network;
     if(!ValidState(state))return;
     network=NativeNetwork(state);
     if(NetworkValid(network)&&network->joinSeq!=network->joinAck){
@@ -107,10 +118,16 @@ void __cdecl NativeLanTick(U module,void*screen,NativeUiState*state){
     if(!gLan.active)return;
     if(!ValidState(state)||module!=gLan.module){gLan.active=0;return;}
     if(gLan.awaiting){
-        if(NetworkValid(network)&&network->clientConnected&&network->clientIdLow==gLan.low&&network->clientIdHigh==gLan.high&&network->clientLobbyPort==gLan.port){
-            gLan.active=0;network->joinPhase=NJ_CONNECTED;Status(state,212,"Native lobby connection confirmed. Race synchronization is not established.");return;
+        if(gLan.auth&&NativePassword(state)->result==2){
+            JoinFailed(state,"The native profile has no space for the password proof.");return;
         }
-        if(++gLan.ticks>7200||*(U*)screen==(U)At(module,0x2145bac))JoinFailed(state,"Native lobby connection was not confirmed. Retry from the room list.");
+        if(NetworkValid(network)&&network->clientConnected&&network->clientIdLow==gLan.low&&network->clientIdHigh==gLan.high&&network->clientLobbyPort==gLan.port){
+            gLan.active=0;if(gLan.directory)network->joinPhase=NJ_CONNECTED;
+            Status(state,212,"Native lobby connection confirmed. Race synchronization is not established.");return;
+        }
+        if(++gLan.ticks>7200||(screen&&*(U*)screen==(U)At(module,0x2145bac)))JoinFailed(state,gLan.auth?
+            "Connection not confirmed. Check the join password and the host connection.":
+            "Native lobby connection was not confirmed. Retry from the room list.");
         return;
     }
     if(++gLan.ticks>900){gLan.active=0;if(gLan.directory)network->joinPhase=NJ_FAILED;Status(state,205,"Native search ended without a matching room. Retry or use the browser.");return;}
@@ -129,7 +146,7 @@ void __cdecl NativeLanTick(U module,void*screen,NativeUiState*state){
         Status(state,207,"Native LAN discovery returned an unexpected list; use the native browser.");return;
     }
     n=(e-b)/4;
-    for(i=0;i<n;++i){void *r=v.b[i];
+    for(i=0;i<n;++i){void *r=v.b[i];U candidateLow,candidateHigh,candidatePort;
         if(gLan.direct){
             U j;int match=1;
             if(!r||*(U*)r!=(U)At(module,0x216a510)||*(unsigned short*)((char*)r+0x80)!=2)continue;
@@ -139,12 +156,21 @@ void __cdecl NativeLanTick(U module,void*screen,NativeUiState*state){
         }
         else if(!ExactName(module,r))continue;
         if(((Flag)Virtual(r,0x20))(r,0))continue;
-        ++matches;low=*(U*)((char*)r+0x50);high=*(U*)((char*)r+0x54);
+        candidateLow=*(U*)((char*)r+0x50);candidateHigh=*(U*)((char*)r+0x54);
+        candidatePort=*(unsigned short*)((char*)r+0x78);
+        if(gLan.direct&&(!(candidateLow|candidateHigh)||!candidatePort))continue;
+        low=candidateLow;high=candidateHigh;port=candidatePort;++matches;
     }
     ((DestroyVector)At(module,0x4eaa00))(&v,0);
     if(matches>1){gLan.active=0;if(gLan.directory)network->joinPhase=NJ_FAILED;Status(state,208,"Several native rooms match. Select one in the browser.");return;}
+    if(matches==1&&gLan.auth){
+        NativePassword(state)->joinLow=low;NativePassword(state)->joinHigh=high;
+    }
     if(matches==1&&JoinRow(module,screen,low,high)){
-        if(gLan.directory){gLan.awaiting=1;gLan.ticks=0;network->joinPhase=NJ_DISPATCHED;}else gLan.active=0;
+        if(gLan.direct&&NetworkValid(network)){
+            gLan.low=low;gLan.high=high;gLan.port=port;gLan.awaiting=1;gLan.ticks=0;
+            if(gLan.directory)network->joinPhase=NJ_DISPATCHED;
+        }else gLan.active=0;
         Status(state,209,"Native join request dispatched. Connection is not yet confirmed.");
     }
 }

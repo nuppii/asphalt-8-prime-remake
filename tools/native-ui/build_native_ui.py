@@ -125,8 +125,8 @@ def build_keyboard_document(document, controls_document):
     return Document(document.magic, b"offline_lobby_ui", [(key, root)])
 
 
-def build_panel_document(document):
-    """Blank original vertical container for runtime-created native buttons."""
+def build_panel_document(document, generic, events):
+    """Native vertical panel and reusable directory rows with a lock sprite."""
     source = document.root("screen_multiplayer_private_local")
     key = next(key for key, node in document.records if node is source)
     root = source.clone("screen_multiplayer_private_local")
@@ -135,7 +135,16 @@ def build_panel_document(document):
     rows.children = []
     frame.children = [rows]
     root.children = [frame]
-    return Document(document.magic, b"offline_lobby_panel", [(key, root)])
+
+    original_button = generic.root("template_bottom_bar_button")
+    row_key = next(k for k, node in generic.records if node is original_button)
+    search_row = original_button.clone(original_button.name)
+    horizontal = document.root("template_room_row").clone("offline_directory_row")
+    lock = events.root("template_stage_page").find("lock_icon").clone("offline_room_lock")
+    lock.property(0x71B64C87).payload = struct.pack("<Bff", 2, 24, 24)
+    horizontal.children = [lock, search_row.find("tab_button")]
+    search_row.children = [horizontal]
+    return Document(document.magic, b"offline_lobby_panel", [(key, root), (row_key, search_row)])
 
 
 def build_roster_document(document, controls_document):
@@ -191,7 +200,9 @@ def main():
         controls = Document.parse((args.gui / "windows_contents.bgin").read_bytes())
         document = build_roster_document(document, controls)
     elif args.panel_only:
-        document = build_panel_document(document)
+        generic = Document.parse((args.gui / "generic_templates.bgin").read_bytes())
+        events = Document.parse((args.gui / "cmp_special_events.bgin").read_bytes())
+        document = build_panel_document(document, generic, events)
     elif args.keyboard_only:
         controls = Document.parse((args.gui / "windows_contents.bgin").read_bytes())
         document = build_keyboard_document(document, controls)

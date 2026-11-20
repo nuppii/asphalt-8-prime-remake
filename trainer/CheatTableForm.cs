@@ -388,6 +388,22 @@ internal static class InjectionCatalog
         });
     internal static readonly InjectionHack NativeDirectDiscovery = new InjectionHack("Native Direct Discovery",
         0x110CE75,"8B 4E 04 8B 01 FF 50 1C",NativeLobbyHook.BuildDiscovery);
+    internal static readonly InjectionHack NativeSendProfile = new InjectionHack("Native Password Profile Send",
+        0x110E076,"E8 15 DD FF FF",NativeLobbyHook.BuildSendProtectedProfile);
+    internal static readonly InjectionHack NativeAuthorizeProfile = new InjectionHack("Native Password Profile Admission",
+        0x110E954,"83 BB 34 01 00 00 00",NativeLobbyHook.BuildAuthorizeProfile);
+    internal static readonly InjectionHack NativeCaptureRaceBoard = new InjectionHack("Native Race Standings Snapshot",
+        0x5C2380,"8B 51 1C 8B 49 18",NativeLobbyHook.BuildCaptureRaceBoard);
+    internal static readonly InjectionHack NativeRaceHudAvailability = new InjectionHack("Native Race Standings HUD",
+        0x9AA135,"8A 40 0C 84 C0",NativeLobbyHook.BuildRaceHudAvailability);
+    internal static readonly InjectionHack NativeRaceHudText = new InjectionHack("Native Race Standings Text",
+        0x9AB2B4,"E8 27 9B 4F 00",NativeLobbyHook.BuildRaceHudText);
+    internal static readonly InjectionHack NativeRaceHudPosition = new InjectionHack("Native Race Standings Placement",
+        0x9AB55B,"F3 0F 11 85 F8 FE FF FF",NativeLobbyHook.BuildRaceHudPosition);
+    internal static readonly InjectionHack InternetLobbyBind = new InjectionHack("Internet Lobby Bind",
+        0x110D902, "6A 00 89 98 48 01 00 00", NativeLobbyHook.BuildInternetLobbyBind);
+    internal static readonly InjectionHack InternetRaceBind = new InjectionHack("Internet Race Bind",
+        0x96C6D0, "66 89 45 DC 8B 85 50 FF FF FF", NativeLobbyHook.BuildInternetRaceBind);
     internal static readonly InjectionHack NativeBotRaceLaunch = new InjectionHack("Native Bot Race Launch",
         0xA99313, "83 F9 01 76 09", BuildNativeBotRaceLaunch);
     internal static readonly InjectionHack NativeBotRaceAlone = new InjectionHack("Native Bot Race Alone",
@@ -1255,9 +1271,10 @@ internal static class NativeInjectionEngine
     [DllImport("kernel32.dll")] static extern bool FlushInstructionCache(IntPtr p,IntPtr a,UIntPtr s);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
 
-    internal static bool Toggle(InjectionHack hack, bool enable, out string error)
+    internal static bool Toggle(InjectionHack hack, bool enable, out string error, int expectedPid = 0)
     {
         error=""; Process[] games=Process.GetProcessesByName("Asphalt8"); if(games.Length==0){error="game not found";return false;}
+        if(expectedPid!=0&&(games.Length!=1||games[0].Id!=expectedPid)){error="game process changed";return false;}
         Process game=games[0]; IntPtr process=OpenProcess(ProcessVmOperation|ProcessVmRead|ProcessVmWrite,false,game.Id);
         if(process==IntPtr.Zero){error="OpenProcess "+Marshal.GetLastWin32Error();return false;}
         try
@@ -1522,6 +1539,40 @@ internal static class NativeInjectionEngine
         if(walletProcessId==pid && allocationProcessId==pid && Allocations.ContainsKey("Wallet Editor"))return true;
         if(!Toggle(InjectionCatalog.Find("Wallet Editor"),true,out error))return false;
         walletProcessId=pid;return true;
+    }
+
+    internal static bool EnableInternetHostPorts(int pid, out string error)
+    {
+        var games = Process.GetProcessesByName("Asphalt8");
+        IntPtr wallet;
+        if (games.Length != 1 || games[0].Id != pid || pid != walletProcessId ||
+            allocationProcessId != pid || !Allocations.TryGetValue("Wallet Editor", out wallet))
+        {
+            error = "Internet hosting requires one attached game.";
+            return false;
+        }
+        if (!Toggle(InjectionCatalog.InternetLobbyBind, true, out error, pid)) return false;
+        if (!Toggle(InjectionCatalog.InternetRaceBind, true, out error, pid)) return false;
+
+        // Leave the installed wrappers inactive if either hook or the write
+        // fails. The process may still be executing a disabled wrapper.
+        IntPtr process = OpenProcess(ProcessVmWrite | ProcessVmOperation, false, pid);
+        if (process == IntPtr.Zero)
+        {
+            error = "Cannot activate the Internet bind hooks.";
+            return false;
+        }
+        try
+        {
+            byte[] enabled = BitConverter.GetBytes(1);
+            IntPtr written;
+            IntPtr gate = IntPtr.Add(wallet, NativeLobbyHook.StateOffset + NativeLobbyHook.InternetHostGateOffset);
+            bool applied = WriteProcessMemory(process, gate, enabled, enabled.Length, out written) &&
+                written.ToInt32() == enabled.Length;
+            error = applied ? "" : "Cannot activate the Internet bind hooks.";
+            return applied;
+        }
+        finally { CloseHandle(process); }
     }
 
     internal static bool ReadNativeLobbyState(out int pid,out byte[] state)

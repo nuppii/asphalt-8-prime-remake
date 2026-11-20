@@ -83,11 +83,13 @@ class NativeResourceTests(unittest.TestCase):
 
     def test_blank_vertical_native_panel(self):
         original, document = self.load("multiplayer_menu")
-        panel = build_panel_document(document)
+        _, generic = self.load("generic_templates")
+        _, events = self.load("cmp_special_events")
+        panel = build_panel_document(document, generic, events)
         self.assertEqual(document.encode(), original)
         decoded = Document.parse(panel.encode())
         self.assertEqual(decoded.namespace, b"offline_lobby_panel")
-        self.assertEqual(len(decoded.records), 1)
+        self.assertEqual(len(decoded.records), 2)
         root = decoded.root("screen_multiplayer_private_local")
         self.assertEqual(root.kind, 0x8706BEAF)
         self.assertEqual(len(root.children), 1)
@@ -100,6 +102,12 @@ class NativeResourceTests(unittest.TestCase):
         self.assertEqual(rows.kind, 0xDE8925BA)
         self.assertEqual(rows.children, [])
         self.assertEqual(frame.children, [rows])
+        search_row = decoded.root("template_bottom_bar_button").find("offline_directory_row")
+        self.assertEqual([child.name for child in search_row.children], [b"offline_room_lock", b"tab_button"])
+        icon = search_row.find("offline_room_lock")
+        self.assertEqual(icon.kind, 0x6E739C13)
+        self.assertIn(b"/Sprites/UI_cmp/Movie_cmp_lock_icon", icon.encode())
+        self.assertEqual(struct.unpack("<Bff", icon.property(0x71B64C87).payload), (2, 24, 24))
         self.assertEqual(decoded.encode(), panel.encode())
 
     def test_waiting_room_roster_has_eight_cells_and_pager(self):

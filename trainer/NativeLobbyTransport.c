@@ -17,8 +17,8 @@ static U Type(U module,void *object,U preferred){return object&&*(U*)object==(U)
 __declspec(dllexport) U __cdecl NativeSoloBotRace(U module)
 {
     void *manager = *(void **)Address(module, 0x22511bc);
-    void *server;
-    U begin, end, limit, human = 0, ai = 0;
+    void *server, *head, *node, *transport, *peer;
+    U begin, end, limit, human = 0, ai = 0, allocatedAi = 0;
     if (!Type(module, manager, 0x213a030)) return 0;
     if (!Type(module, Pointer(manager, 0xe8), 0x216a4e4)) return 0;
     server = Pointer(manager, 0xec);
@@ -33,11 +33,26 @@ __declspec(dllexport) U __cdecl NativeSoloBotRace(U module)
     for (; begin < end; begin += 4) {
         void *racer = *(void **)begin;
         if (!Type(module, racer, 0x2119464)) return 0;
+        if (*((Byte *)racer + 0x22f8)) ++allocatedAi;
         if (*((Byte *)racer + 0x2290) != 1) continue;
-        if (*((Byte *)racer + 0x22f9)) ++ai;
+        if (*((Byte *)racer + 0x22f8)) ++ai;
         else ++human;
     }
-    return human == 1 && ai != 0;
+    if(human==1&&ai!=0)return 1;
+    /* In the live pre-grid state the local client already has a native UDP
+     * peer and RTT while every provisional ServerRacer has active=0. The
+     * stock alone timer can fire during that window. Qualify only the sole
+     * loopback peer owned by this Classic host and the populated AI grid. */
+    if(!allocatedAi||Dword(server,0x2c)!=1)return 0;
+    head=Pointer(server,0x28);
+    if(!head)return 0;
+    node=Pointer(head,0);
+    if(!node||node==head)return 0;
+    transport=Pointer(node,0x10);
+    if(!Type(module,transport,0x2119738)||Word(transport,0x21f8)!=2||
+       Dword(transport,0x21fc)!=0x0100007f||!Dword(transport,0x21b8))return 0;
+    peer=Pointer(transport,0x23e0);
+    return peer&&*((Byte *)peer+0x2b9)==1;
 }
 
 static U SameUser(void *a,void *b){
@@ -90,10 +105,11 @@ U __cdecl NativeReadRoster(U module, void *screen, NativeRoster *roster)
         if (!Type(module, user, 0x216a568)) return 0;
         for (j = 0; j < 4; ++j)
             roster->users[i].identity[j] = Dword(user, 0xe8 + j * 4);
-        /* User vtable slot 0 (1511EA0) returns the profile name at +A0. */
-        length = Dword(user, 0xb0);
-        storage = Dword(user, 0xb4);
-        name = storage < 16 ? (const char *)user + 0xa0 : Pointer(user, 0xa0);
+        /* The first serialized profile string is the visible driver name
+         * at +B8. The +A0 string identifies the protocol and platform. */
+        length = Dword(user, 0xc8);
+        storage = Dword(user, 0xcc);
+        name = storage < 16 ? (const char *)user + 0xb8 : Pointer(user, 0xb8);
         j = 0;
         if (name && length <= storage && length <= 4096) {
             for (; j < length && j < 24 && name[j]; ++j) roster->users[i].name[j] = name[j];
@@ -199,6 +215,11 @@ void __cdecl NativeTransportTick(U module,void *screen,NativeUiState *ui){
         transport=Pointer(lobby,0x70);if(!Type(module,transport,0x216a364))goto done;
         if(((ResultMethod)Virtual(transport,0x10))(transport,0)!=0)goto done;
         n->clientIdLow=low;n->clientIdHigh=high;n->clientLobbyPort=lobbyPort;n->clientConnected=1;
+        if(Word(room,0x80)==2){
+            *(U *)((Byte *)ui+0x10a4)=Dword(room,0x84);
+            *(U *)((Byte *)ui+0x10a8)=low;
+            *(U *)((Byte *)ui+0x10ac)=high;
+        }
     }
 done:
     _ReadWriteBarrier();++sequence;*(volatile U*)&n->hostEndRevision=sequence;

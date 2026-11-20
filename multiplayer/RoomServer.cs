@@ -43,6 +43,19 @@ namespace OfflineLab.Multiplayer
         public string RoomId { get { return roomId; } }
         internal byte[] HostKey { get { return hostKey; } }
 
+        public LanRoomListing CreateListing(bool listPasswordProtected = false)
+        {
+            lock(gate)
+            {
+                if(stopped||Port==0||peers.Count==0)return null;
+                return new LanRoomListing
+                {
+                    RoomId=roomId,Name=name,Port=Port,Players=peers.Count,Capacity=settings.EffectiveGridSlots,
+                    IsPrivate=isPrivate&&!listPasswordProtected,PasswordProtected=isPrivate
+                };
+            }
+        }
+
         public RoomServer(string name,RoomSettings settings,string password) : this(name,settings,password,null,null) { }
         internal RoomServer(string name,RoomSettings settings,string password,RoomSnapshot seed,Dictionary<string,string> tickets)
         {

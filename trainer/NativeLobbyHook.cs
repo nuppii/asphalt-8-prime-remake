@@ -10,6 +10,9 @@ internal static class NativeLobbyHook
     internal const int AllocationSize = 0x40000;
     internal const int ImageOffset = 0x2000;
     internal const int StateOffset = 0x38000;
+    // Separate from the shared UI/network ABI. Both host bind hooks read
+    // this word, so a partial installation uses the stock port arguments.
+    internal const int InternetHostGateOffset = 0x1000;
     internal static long StateAddress;
     private static readonly byte[] ImageFile = LoadImage();
 
@@ -55,6 +58,145 @@ internal static class NativeLobbyHook
         code.Add(0xe8);code.AddRange(BitConverter.GetBytes(unchecked((int)(target-(cave+code.Count+4)))));
         code.AddRange(InjectionHack.Hex("83 C4 0C 0F AE 0C 24 8B E3 61 9D"));
         code.Add(0xe9);code.AddRange(BitConverter.GetBytes(unchecked((int)(module+0x110CE7D-(cave+code.Count+4)))));
+        return code.ToArray();
+    }
+
+    internal static byte[] BuildSendProtectedProfile(long module,long cave)
+    {
+        // Original CALL has the profile argument at [esp], the connection in
+        // ECX and the LocalLobby in EDI. The original call pops one argument.
+        var code=new List<byte>(InjectionHack.Hex("FF 34 24 51 57"));
+        EmitPasswordCall(code,module,cave,"NativeSendProtectedProfile");
+        code.AddRange(InjectionHack.Hex("83 C4 18"));
+        return EndInternetBind(code,module+0x110E07B,cave);
+    }
+
+    internal static byte[] BuildAuthorizeProfile(long module,long cave)
+    {
+        // State-3 admission path before either accepting a retransmission or
+        // comparing the incoming identity to potentially replace a real user.
+        var code=new List<byte>(InjectionHack.Hex("9C 60 56 53 57"));
+        EmitPasswordCall(code,module,cave,"NativeAuthorizeProfile");
+        code.AddRange(InjectionHack.Hex("83 C4 14 85 C0 75 07 61 9D"));
+        EndInternetBind(code,module+0x110E922,cave);
+        code.AddRange(InjectionHack.Hex("61 9D 83 BB 34 01 00 00 00"));
+        return EndInternetBind(code,module+0x110E95B,cave);
+    }
+
+    private static void EmitPasswordCall(List<byte> code,long module,long cave,string name)
+    {
+        if(StateAddress==0)throw new InvalidOperationException("Native lobby state is not installed.");
+        long target=StateAddress-StateOffset+ImageOffset+ExportRva(name);
+        code.Add(0x68);code.AddRange(BitConverter.GetBytes(unchecked((int)StateAddress)));
+        code.Add(0x68);code.AddRange(BitConverter.GetBytes(unchecked((int)module)));
+        code.Add(0xe8);code.AddRange(BitConverter.GetBytes(unchecked((int)(target-(cave+code.Count+4)))));
+    }
+
+    internal static byte[] BuildCaptureRaceBoard(long module,long cave)
+    {
+        if(StateAddress==0)throw new InvalidOperationException("Native lobby state is not installed.");
+        long capture=StateAddress-StateOffset+ImageOffset+ExportRva("NativeCaptureRaceBoard");
+        var code=new List<byte>(InjectionHack.Hex("51 E8"));
+        int originalCall=code.Count;
+        code.AddRange(new byte[4]);
+        // Sort returns with the saved this pointer still on the stack.
+        // FXSAVE keeps the original caller's x87/SSE state across observation.
+        code.AddRange(InjectionHack.Hex("9C 60 8B DC 81 EC 10 02 00 00 83 E4 F0 0F AE 04 24 FF 73 24 68"));
+        code.AddRange(BitConverter.GetBytes(unchecked((int)StateAddress)));
+        code.Add(0x68);code.AddRange(BitConverter.GetBytes(unchecked((int)module)));
+        code.Add(0xe8);code.AddRange(BitConverter.GetBytes(unchecked((int)(capture-(cave+code.Count+4)))));
+        code.AddRange(InjectionHack.Hex("83 C4 0C 0F AE 0C 24 8B E3 61 9D 8D 64 24 04 C3"));
+        byte[] rel=BitConverter.GetBytes(code.Count-originalCall-4);
+        for(int i=0;i<rel.Length;i++)code[originalCall+i]=rel[i];
+        code.AddRange(InjectionHack.Hex("8B 51 1C 8B 49 18"));
+        return EndInternetBind(code,module+0x5C2386,cave);
+    }
+
+    private static List<byte> BeginRaceHud(long module,long cave)
+    {
+        if(StateAddress==0)throw new InvalidOperationException("Native race HUD state is not installed.");
+        var code=new List<byte>(InjectionHack.Hex("9C 60 8B DC 81 EC 10 02 00 00 83 E4 F0 0F AE 04 24 68"));
+        code.AddRange(BitConverter.GetBytes(unchecked((int)StateAddress)));
+        code.Add(0x68);code.AddRange(BitConverter.GetBytes(unchecked((int)module)));
+        long text=StateAddress-StateOffset+ImageOffset+ExportRva("NativeRaceText");
+        code.Add(0xe8);code.AddRange(BitConverter.GetBytes(unchecked((int)(text-(cave+code.Count+4)))));
+        code.AddRange(InjectionHack.Hex("83 C4 08 85 C0"));
+        return code;
+    }
+
+    internal static byte[] BuildRaceHudAvailability(long module,long cave)
+    {
+        var code=BeginRaceHud(module,cave);
+        code.AddRange(InjectionHack.Hex("74 10 0F AE 0C 24 8B E3 61 9D 8A 40 0C"));
+        EndInternetBind(code,module+0x9AA13C,cave);
+        code.AddRange(InjectionHack.Hex("0F AE 0C 24 8B E3 61 9D 8A 40 0C 84 C0"));
+        return EndInternetBind(code,module+0x9AA13A,cave);
+    }
+
+    internal static byte[] BuildRaceHudText(long module,long cave)
+    {
+        var code=BeginRaceHud(module,cave);
+        code.AddRange(InjectionHack.Hex("74 0A 89 43 2C C7 43 28"));
+        int formatPointer=code.Count;
+        code.AddRange(new byte[4]);
+        code.AddRange(InjectionHack.Hex("0F AE 0C 24 8B E3 61 9D"));
+        code.Add(0xe8);code.AddRange(BitConverter.GetBytes(unchecked((int)(module+0xEA4DE0-(cave+code.Count+4)))));
+        EndInternetBind(code,module+0x9AB2B9,cave);
+        byte[] pointer=BitConverter.GetBytes(unchecked((int)(cave+code.Count)));
+        for(int i=0;i<pointer.Length;i++)code[formatPointer+i]=pointer[i];
+        code.AddRange(new byte[]{(byte)'%',(byte)'s',0});
+        return code.ToArray();
+    }
+
+    internal static byte[] BuildRaceHudPosition(long module,long cave)
+    {
+        var code=BeginRaceHud(module,cave);
+        // The native text is anchored above its baseline. Lower that
+        // baseline by a font-relative distance for the multiline table.
+        code.AddRange(InjectionHack.Hex("74 1D 0F AE 0C 24 8B E3 61 9D F3 0F 59 05"));
+        int relativeScale=code.Count;
+        code.AddRange(new byte[4]);
+        code.AddRange(InjectionHack.Hex("F3 0F 11 85 F8 FE FF FF"));
+        EndInternetBind(code,module+0x9AB563,cave);
+        code.AddRange(InjectionHack.Hex("0F AE 0C 24 8B E3 61 9D F3 0F 11 85 F8 FE FF FF"));
+        EndInternetBind(code,module+0x9AB563,cave);
+        byte[] pointer=BitConverter.GetBytes(unchecked((int)(cave+code.Count)));
+        for(int i=0;i<pointer.Length;i++)code[relativeScale+i]=pointer[i];
+        code.AddRange(BitConverter.GetBytes(8.0f));
+        return code.ToArray();
+    }
+
+    internal static byte[] BuildInternetLobbyBind(long module, long cave)
+    {
+        var code = InternetBindPrefix();
+        code.AddRange(InjectionHack.Hex("75 08 9D 68"));
+        code.AddRange(BitConverter.GetBytes(NativeNetworkState.InternetLobbyPort));
+        code.AddRange(InjectionHack.Hex("EB 03 9D 6A 00 89 98 48 01 00 00"));
+        return EndInternetBind(code, module + 0x110D90A, cave);
+    }
+
+    internal static byte[] BuildInternetRaceBind(long module, long cave)
+    {
+        var code = InternetBindPrefix();
+        code.AddRange(InjectionHack.Hex("74 07 9D 66 89 45 DC EB 07 9D 66 C7 45 DC"));
+        code.AddRange(BitConverter.GetBytes((ushort)NativeNetworkState.InternetRacePort));
+        code.AddRange(InjectionHack.Hex("8B 85 50 FF FF FF"));
+        return EndInternetBind(code, module + 0x96C6DA, cave);
+    }
+
+    private static List<byte> InternetBindPrefix()
+    {
+        if (StateAddress == 0) throw new InvalidOperationException("Native lobby state is not installed.");
+        var code = new List<byte>(InjectionHack.Hex("9C 83 3D"));
+        code.AddRange(BitConverter.GetBytes(unchecked((int)(StateAddress + InternetHostGateOffset))));
+        code.Add(1);
+        return code;
+    }
+
+    private static byte[] EndInternetBind(List<byte> code, long continuation, long cave)
+    {
+        code.Add(0xe9);
+        code.AddRange(BitConverter.GetBytes(unchecked((int)(continuation - (cave + code.Count + 4)))));
         return code.ToArray();
     }
 

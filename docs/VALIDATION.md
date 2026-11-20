@@ -76,6 +76,24 @@ The Fill with AI bridge calls the original callback at preferred image VA `0xE99
 
 See [multiplayer status and test commands](MULTIPLAYER.md) for the implementation boundaries and reproducible checks.
 
+### Windows Sandbox follow-up
+
+The original host and a second Asphalt 4.8.0.7 process ran on one PC using Windows Sandbox with software rendering. The packaged guest initially exited at the Gameloft logo without the trainer. A temporary guest-only compatibility probe used the guest's actual Windows version and returned unavailable results for optional device inventory and accelerometer queries. The guest then reached the garage with a fresh profile and opened the native multiplayer menu.
+
+Each instance hosted Classic on Nevada in class D in turn. The host displayed one human and six AI previews. The other instance found no room through either the default LAN browser or the native directed IPv4 search. Directed search expired in both directions. The regular Windows host held UDP 6529 while hosting, and an ICMP echo to the guest succeeded. These checks leave the cause of the native discovery failure undetermined.
+
+The installed launcher passed 1,963 assertions in the isolated native fixture. A two-human lobby, a race with both players and AI, and a live AI-to-human takeover remain unverified. No Developer Mode, firewall or loopback settings were changed for this test. The compatibility probe was used only in the disposable guest.
+
+### Same-PC native discovery packet trace
+
+Windows Sandbox classified its virtual Ethernet as Public. A desktop UDP control exchanged datagrams in both directions between the host and guest. With the original guest package, the room bound UDP 6529. Frida observed native multicast sends fail with Winsock error 10065. Directed sends reported 21 bytes sent to the guest, with no reply observed. Both discovery modes left the room browser empty.
+
+A disposable guest package replaced `internetClient` with `internetClientServer` and retained `privateNetworkClientServer`. Its engine executable hash matched the baseline. Installation succeeded and the patched guest hosted Nevada again. Directed discovery still expired. A filtered guest Packet Monitor capture saw zero matching datagrams at its adapter. No corresponding local WFP events were available. Reading the host WFP event log returned access denied. See [Windows app network capabilities](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/app-capability-declarations).
+
+An ordinary desktop UDP socket sent the exact 21-byte native query to the modified guest and received six valid-length native replies in six attempts, all 366 bytes from UDP 6529. Three new raw Winsock sockets created inside the regular Asphalt process still received no reply with a wildcard bind, an explicit virtual-adapter bind, or a connected UDP socket. Setting the native discovery socket's outgoing interface to the Hyper-V adapter also left the browser empty. These controls locate the failure to the packaged sender's network path in this environment. The specific filter or routing boundary remains undetermined.
+
+REA observations: `ev_c2bc4b6590aefa2ee1d28d73eec90ecedd0acca5dbd002fc7d4720f8e4dabd0b` (directed sends), `ev_220f5f9193f5535993363d61b590d40d7c9424402e2581d7c795ad674bad18a4` (multicast errors and directed sends), `ev_bb81fe53a9eaf3074a27c08ae18ad25112cb976a3cb30e5822d1c5b591e3f802` (interface and alternate socket tests). Instrumentation was detached after the test. The installed build and Windows networking settings were left unchanged. No two-player race or in-progress bot takeover was verified.
+
 ## Player-hosted Internet foundation
 
 The native direct-discovery build has SHA-256 `72d3c48f060d727fc78ee7c22ebd498f3a4c2c221f4b989a4fd222f8218b2483` and passed 1,383 isolated native assertions, including 623 HIGHLOW relocations. New checks execute the actual direct-discovery helper and wrapper in owned memory with stubbed original callbacks: IPv4 validation/encoding, scoped direct versus default dispatch, foreign-Finder fallback, invalid-input cancellation, leaving the browser and 900-tick expiry. These fixtures open no game process.
@@ -83,6 +101,12 @@ The native direct-discovery build has SHA-256 `72d3c48f060d727fc78ee7c22ebd498f3
 The installed build was restarted without Frida. Its native IPv4 action appeared enabled, empty input was refused, native keyboard confirmation accepted the literal `A`, and the direct action rejected that invalid address. The test query was cleared afterward; saved policies, Grid 20, Laps 3 and ASPHALT8 room name remained unchanged. The original room browser also opened without a crash with the new hook installed. These checks do not establish successful directed discovery or a remote native join.
 
 The separate STUN fixture passed 88 codec/socket assertions and exercised 1,000 arbitrary bounded attribute streams. It covers IPv4/IPv6 XOR mappings, malformed/truncated responses, transaction/source checks, independent CRC verification, same-socket retries and timeout restoration. Nineteen directory/social integration tests passed after the library addition; nine social tests passed again after native readiness-gate integration. No public STUN provider was contacted, public directory deployed or Windows/router networking configuration changed. See [player-hosted Internet status](INTERNET-HOSTING.md) for the separate native transport and race handover work.
+
+### Fixed IPv4 hosting ports
+
+An isolated x86 fixture executed both fixed-port wrappers with the gate enabled, disabled, and set to an unexpected value. It verified the original continuation, stack balance, carry flag, displaced instructions, and port requests. Stubbed native discovery and lobby callbacks exercised rejection of a missing port, rejection of an acknowledgement on the wrong port, and confirmation of the matching direct join. The trainer fixture passed 1,984 assertions and the STUN fixture passed 88 checks. The 23 directory integration tests include publication of the observed fixed lobby port and withdrawal when the observed port changes. Two consecutive runs of the offline patcher on a disposable copy produced the expected Internet listener capability and identical Asphalt8.exe payload hashes.
+
+Only builds and local fixtures were run for this change. Runtime binding, UDP forwarding, peer admission, racing, and joining a running race have no new end-to-end evidence.
 
 ## Native room-search dropdown
 
@@ -136,3 +160,12 @@ This is targeted evidence from one car/track setup and the native fixture. Other
 - Treat remote-event and missing-catalogue paths as separately unsupported until observed working.
 
 When reporting a crash, specify whether it happened during selection, loading, grid preparation, racing, upgrading or shutdown. Include the last actions and active tool list. Do not claim a whole category is verified from a successful signature check alone.
+## Live restart and native standings observation
+
+The installed game was restarted with the staged experimental bot-race trainer. It reached the native multiplayer menu, created a Classic room on Nevada using the owned Dodge Dart GT, listed AI slots and loaded the track. The original `You are alone` prompt reappeared after **Yes**. At that point the loaded game's original sorter was producing fresh eight-row snapshots, but every server row was still flagged AI, every activation byte was clear, and all eight rows carried the same provisional identity. There was no usable host or peer assignment and no player RTT to display. The HUD now suppresses such provisional tables. **No** returned from the test race. A native two-peer race and direct private-room password enforcement remain unverified in-game.
+
+## Windows setup preview
+
+A follow-up test with the corrected solo-bot eligibility check ran a Classic race on Nevada with a Dodge Dart GT for over two minutes without the **You are alone** prompt. The native TAB standings rendered while racing. The final nickname lookup and HUD placement correction passed the isolated native fixture, which also exercises the race order, transport RTT data and password admission logic with stubbed game objects. Real RTT display for two human players and direct private-room admission still need end-to-end testing across separate game clients.
+
+The Windows setup builds a pinned 4.8.0.7 engine under a separate package identity. It generates local menu resources from the supplied game files. A prior installation is optional. A compatible package or extracted source remains required. The installer fixture exercises archive extraction and preparation separately from Windows registration and game launch.

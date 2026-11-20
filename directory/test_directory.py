@@ -56,6 +56,27 @@ class DirectoryTests(unittest.TestCase):
                        {"players": True}, {"name": "bad\nname"}):
             self.assertEqual(self.request("POST", "/v1/rooms/test-room", dict(self.room, **change))[0], 400)
 
+    def test_listed_password_protected_room(self):
+        locked = dict(self.room, passwordProtected=True, password="must-not-be-disclosed")
+        code, reply = self.request("POST", "/v1/rooms/locked-room", locked)
+        self.assertEqual(code, 201)
+        self.assertTrue(reply["room"]["passwordProtected"])
+        for route in ("/v1/rooms", "/v1/rooms/locked-room"):
+            status, result = self.request("GET", route)
+            self.assertEqual(status, 200)
+            self.assertNotIn("must-not-be-disclosed", json.dumps(result))
+            self.assertTrue((result.get("room") or result["rooms"][0])["passwordProtected"])
+        invalid = dict(self.room, passwordProtected=1)
+        self.assertEqual(self.request("POST", "/v1/rooms/invalid-room", invalid)[0], 400)
+        native = dict(locked, transport="asphalt480-udp", nativeRoomId="0123456789abcdef", discoveryPort=6529)
+        self.assertEqual(self.request("POST", "/v1/rooms/native-room", native)[0], 400)
+        native["nativePasswordVersion"] = 1
+        code, reply = self.request("POST", "/v1/rooms/native-room", native)
+        self.assertEqual(code, 201)
+        self.assertEqual(reply["room"]["nativePasswordVersion"], 1)
+        self.assertTrue(reply["room"]["passwordProtected"])
+        self.assertNotIn("password", reply["room"])
+
     def test_transport_default_and_native_roundtrip(self):
         _, legacy = self.request("POST", "/v1/rooms/legacy-room", self.room)
         self.assertEqual(legacy["room"]["transport"], "room-control-tcp")

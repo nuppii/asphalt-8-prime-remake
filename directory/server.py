@@ -86,6 +86,13 @@ class Directory:
         transport = payload.get("transport", "room-control-tcp")
         if transport not in ("room-control-tcp", "asphalt480-udp"):
             raise ValueError("Unsupported room transport")
+        password_protected = payload.get("passwordProtected", False)
+        if type(password_protected) is not bool:
+            raise ValueError("passwordProtected must be a boolean")
+        password_version = payload.get("nativePasswordVersion", 0)
+        expected_version = int(password_protected and transport == "asphalt480-udp")
+        if type(password_version) is not int or password_version != expected_version:
+            raise ValueError("Unsupported native room password protocol")
         native_id = payload.get("nativeRoomId")
         discovery_port = payload.get("discoveryPort", 0)
         if transport == "asphalt480-udp":
@@ -117,8 +124,12 @@ class Directory:
             room = {"roomId": room_id, "name": name.strip(), "address": address,
                     "port": port, "players": players, "capacity": capacity, "protocol": 1,
                     "transport": transport}
+            if password_protected:
+                room["passwordProtected"] = True
             if transport == "asphalt480-udp":
                 room.update(nativeRoomId=native_id, discoveryPort=discovery_port)
+                if password_version:
+                    room["nativePasswordVersion"] = password_version
             self.rooms[room_id] = {"room": room, "token_digest": digest,
                                    "deadline": time.monotonic() + self.lease_seconds}
             result = {"room": room, "leaseSeconds": self.lease_seconds}

@@ -3,7 +3,13 @@ using System;
 // The UI ABI remains v1/3784. Networking has its own versioned extension.
 internal static class NativeNetworkState
 {
-    internal const int UiBytes=3784, Offset=3784, Bytes=256, BufferBytes=4040;
+    internal const int UiBytes=3784, Offset=3784, Bytes=256, BufferBytes=0x16bc;
+    internal const int RaceTabHeld=0x10a0, RaceGuestAddress=0x10a4, RaceGuestLow=0x10a8, RaceGuestHigh=0x10ac, RaceProofRoom=0x10b0,
+        HostRaceBoard=0x1100, GuestRaceBoard=0x1400, RaceBoardBytes=700, RaceRowBytes=56;
+    internal const int PasswordOffset=0x1020, PasswordEnabled=PasswordOffset, HostPasswordReady=PasswordOffset+4,
+        GuestPasswordReady=PasswordOffset+8, HostPasswordKey=PasswordOffset+12, GuestPasswordKey=PasswordOffset+44,
+        PasswordNonceSeed=PasswordOffset+76, JoinUsePassword=PasswordOffset+104;
+    internal const int InternetLobbyPort=6530, InternetRacePort=6540;
     internal const uint Magic=0x38544e4e;
     internal const int EditToken=4024, KeyWord=4028, KeySequence=4032, KeyAck=4036;
     internal const int HostRevision=3796,HostAlive=3800,HostIdLow=3804,HostIdHigh=3808,HostLobbyPort=3812,HostDiscoveryPort=3816,HostPlayers=3820,HostCapacity=3824,HostPrivate=3828,HostName=3832;

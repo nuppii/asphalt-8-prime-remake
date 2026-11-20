@@ -21,14 +21,16 @@ namespace OfflineLab.Multiplayer
         [DataMember(Name="capacity")] public int Capacity { get; set; }
         [DataMember(Name="protocol")] public int Protocol { get; set; }
         [DataMember(Name="private")] public bool IsPrivate { get; set; }
+        [DataMember(Name="passwordProtected")] public bool PasswordProtected { get; set; }
+        [DataMember(Name="nativePasswordVersion")] public int NativePasswordVersion { get; set; }
         [DataMember(Name="transport")] public string Transport { get; set; }
         [DataMember(Name="nativeRoomId")] public string NativeRoomId { get; set; }
         [DataMember(Name="discoveryPort")] public int DiscoveryPort { get; set; }
         internal LanRoomListing ToRoom()
         {
             return new LanRoomListing { RoomId=RoomId,Name=Name,Address=Address,Port=Port,
-                Players=Players,Capacity=Capacity,IsPrivate=IsPrivate,Transport=Transport,
-                NativeRoomId=NativeRoomId,DiscoveryPort=DiscoveryPort };
+                Players=Players,Capacity=Capacity,IsPrivate=IsPrivate,PasswordProtected=PasswordProtected,Transport=Transport,
+                NativeRoomId=NativeRoomId,DiscoveryPort=DiscoveryPort,NativePasswordVersion=NativePasswordVersion };
         }
     }
 
@@ -58,6 +60,8 @@ namespace OfflineLab.Multiplayer
         [DataMember(Name="players")] public int Players;
         [DataMember(Name="capacity")] public int Capacity;
         [DataMember(Name="private")] public bool Private;
+        [DataMember(Name="passwordProtected",EmitDefaultValue=false)] public bool PasswordProtected;
+        [DataMember(Name="nativePasswordVersion",EmitDefaultValue=false)] public int NativePasswordVersion;
         [DataMember(Name="transport")] public string Transport;
         [DataMember(Name="nativeRoomId",EmitDefaultValue=false)] public string NativeRoomId;
         [DataMember(Name="discoveryPort",EmitDefaultValue=false)] public int DiscoveryPort;
@@ -99,11 +103,18 @@ namespace OfflineLab.Multiplayer
         { return SearchPage(directory,name,limit,offset,prefix).Rooms; }
 
         public static RoomSearchPage SearchPage(Uri directory,string name,int limit=50,int offset=0,bool prefix=false)
+        {return RequestPage(directory,ValidateName(name),limit,offset,prefix);}
+
+        public static RoomSearchPage BrowsePage(Uri directory,int limit=50,int offset=0)
+        {return RequestPage(directory,null,limit,offset,false);}
+
+        private static RoomSearchPage RequestPage(Uri directory,string name,int limit,int offset,bool prefix)
         {
-            name=ValidateName(name);
             if(limit<1||limit>256||offset<0||offset>10000)throw new ArgumentOutOfRangeException("limit","Search limit must be 1-256 and offset 0-10000.");
-            string path="v1/rooms?name="+Uri.EscapeDataString(name)+"&match="+(prefix?"prefix":"exact")+
-                "&limit="+limit.ToString(System.Globalization.CultureInfo.InvariantCulture)+"&offset="+offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string path="v1/rooms?limit="+limit.ToString(System.Globalization.CultureInfo.InvariantCulture)+
+                "&offset="+offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if(name!=null)
+                path+="&name="+Uri.EscapeDataString(name)+"&match="+(prefix?"prefix":"exact");
             var response=(PublicList)Request(directory,path,"GET",null,null,typeof(PublicList));
             if(response==null)throw new InvalidDataException("The directory returned an empty search response.");
             var rooms=new List<LanRoomListing>();
@@ -238,6 +249,7 @@ namespace OfflineLab.Multiplayer
                 if(!LanRoomDiscovery.Valid(room) || room.IsPrivate)return;
                 if(roomId!=null && roomId!=room.RoomId)throw new InvalidOperationException("A directory lease cannot change rooms.");
                 var body=new Announcement {Name=room.Name,Port=room.Port,Players=room.Players,Capacity=room.Capacity,Private=false,
+                    PasswordProtected=room.PasswordProtected,NativePasswordVersion=room.NativePasswordVersion,
                     Transport=room.EffectiveTransport,NativeRoomId=room.NativeRoomId,DiscoveryPort=room.DiscoveryPort};
                 LeaseReply reply;
                 try { reply=(LeaseReply)PublicRoomDirectory.Request(directory,"v1/rooms/"+Uri.EscapeDataString(room.RoomId),"POST",body,token,typeof(LeaseReply)); }

@@ -7,6 +7,7 @@
 #include "NativeLobbyPolicy.h"
 #include "NativeLobbyTransport.h"
 #include "NativeNetworkState.h"
+#include "NativeRaceBoard.h"
 
 typedef unsigned U32;
 typedef struct Pair { void *ptr; void *control; } Pair;
@@ -28,11 +29,11 @@ typedef void (__cdecl *BindCall)(void);
 enum { A_PAGE=1, A_TOGGLE, A_GRID, A_LAPS, A_EDIT, A_FIND, A_FRIENDS,
        A_KEY, A_SPACE, A_DELETE, A_CANCEL, A_CONFIRM,
        A_SELECT_ROOM,A_JOIN_ROOM,A_SELECT_FRIEND,A_INVITE_FRIEND,
-       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN,A_ROOM_LIST,A_ROSTER_PAGE };
-enum { E_ROOM=1,E_QUERY=2,E_NICKNAME=3,E_PASSWORD=4,E_DIRECTORY=5,E_FRIEND_ID=6 };
+       A_SHIFT,A_PASTE,A_SOCIAL_PAGE,A_REQUEST,A_RESULT_PAGE,A_LAN_JOIN,A_CLEAR,A_RESET_RACE,A_COPY_ID,A_DIRECT_JOIN,A_ROOM_LIST,A_ROSTER_PAGE,A_DIRECTORY_PAGE };
+enum { E_ROOM=1,E_QUERY=2,E_NICKNAME=3,E_PASSWORD=4,E_DIRECTORY=5,E_FRIEND_ID=6,E_JOIN_PASSWORD=7 };
 typedef struct Control {
-    Pair visual, button, connection;
-    U32 generation, page, action, value, attached, selected;
+    Pair visual, button, connection, lockIcon;
+    U32 generation, page, action, value, attached, selected, lockVisible;
     char label[192];
 } Control;
 static U32 gModule,gGeneration,gCount,gKeyboardAttempt,gEdit,gReturnPage;
@@ -179,6 +180,18 @@ static Control *Make(void *parent,const char *path,const char *child,U32 page,U3
 static Control *Button(U32 page,U32 action,U32 value,const char *label) {
     return Make(gRoot,"generic_templates/template_bottom_bar_button","tab_button",page,action,value,label);
 }
+static void DirectoryRow(U32 index) {
+    U32 previousFailures=gBuildFailures;
+    Control *row=Make(gRoot,"offline_lobby_panel/template_bottom_bar_button","tab_button",NUI_FIND,A_SELECT_ROOM,index,"");
+    if(!row){
+        /* Older local installations may still have the one-record panel. */
+        gBuildFailures=previousFailures;
+        Button(NUI_FIND,A_SELECT_ROOM,index,"");
+        return;
+    }
+    Find(row->visual.ptr,"offline_room_lock",&row->lockIcon);
+    Visible(row->lockIcon.ptr,0);
+}
 static void DropConnection(Pair *p) {
     /* boost connection tokens here retain only the weak count (+8), as
      * shown by native move/release532EB0. Widgets/signals are released first. */
@@ -271,7 +284,12 @@ static void TickRoster(U32 module,void *screen,NativeUiState *shared)
     U32 i,first,visible,layout=0,newScreen,sources[NATIVE_ROSTER_CAPACITY];
     char label[128],num[12];
     if(shared->magic!=NATIVE_UI_MAGIC||shared->version!=NATIVE_UI_VERSION||shared->size<sizeof(*shared)||
-       !shared->grid || shared->grid>NATIVE_UI_MAX_RACERS || !NativeReadRoster(module,screen,&roster)){
+       !NativeReadRoster(module,screen,&roster)){
+        if(gRosterSource)DropRoster();
+        return;
+    }
+    NativeRememberRaceRoster(&roster);
+    if(!shared->grid||shared->grid>NATIVE_UI_MAX_RACERS){
         if(gRosterSource)DropRoster();
         return;
     }
@@ -326,7 +344,7 @@ static void TickRoster(U32 module,void *screen,NativeUiState *shared)
 static void ResetRoot(void) {
     U32 i;gRoot=0;++gGeneration;
     Visible(gCenter.ptr,1);
-    for(i=0;i<gCount;++i){DropPair(&gControls[i].button);DropPair(&gControls[i].visual);}
+    for(i=0;i<gCount;++i){DropPair(&gControls[i].lockIcon);DropPair(&gControls[i].button);DropPair(&gControls[i].visual);}
     if(gHostCenter.ptr && gKeyboard.ptr && gKeyboardAttached)((PairArg)Virtual(gHostCenter.ptr,0xe8))(gHostCenter.ptr,0,&gKeyboard);
     if(gHostCenter.ptr && gPanel.ptr)((PairArg)Virtual(gHostCenter.ptr,0xe8))(gHostCenter.ptr,0,&gPanel);
     DropPair(&gKeyboard);DropPair(&gCenter);DropPair(&gRootPair);DropPair(&gPanel);
@@ -353,9 +371,11 @@ static void Build(void) {
     Button(NUI_FIND,A_EDIT,E_QUERY,"");Button(NUI_FIND,A_FIND,0,"SEARCH DIRECTORY");
     Button(NUI_FIND,A_LAN_JOIN,0,"JOIN LAN BY NAME");
     Button(NUI_FIND,A_DIRECT_JOIN,0,"JOIN BY IPV4 ADDRESS");
+    Button(NUI_FIND,A_EDIT,E_JOIN_PASSWORD,"SET JOIN PASSWORD");
     Button(NUI_FIND,A_ROOM_LIST,0,"ROOMS: SEARCH TO LIST GAMES");
-    for(i=0;i<8;++i)Button(NUI_FIND,A_SELECT_ROOM,i,"");
-    Button(NUI_FIND,A_RESULT_PAGE,0,"MORE RESULTS");
+    for(i=0;i<4;++i)DirectoryRow(i);
+    Button(NUI_FIND,A_DIRECTORY_PAGE,NUI_REQUEST_PREVIOUS_ROOMS,"PREVIOUS PAGE");
+    Button(NUI_FIND,A_DIRECTORY_PAGE,NUI_REQUEST_NEXT_ROOMS,"NEXT PAGE");
     Button(NUI_FIND,A_JOIN_ROOM,0,"JOIN SELECTED ROOM");
     Button(NUI_FIND,A_PAGE,NUI_MAIN,"BACK");
     Button(NUI_FRIENDS,A_EDIT,E_NICKNAME,"");
@@ -422,7 +442,7 @@ static void Keyboard(void) {
 static char *EditTarget(U32 *capacity) {
     if(gEdit==E_ROOM){*capacity=64;return gState->roomName;}
     if(gEdit==E_QUERY){*capacity=64;return gState->query;}
-    if(gEdit==E_PASSWORD){*capacity=64;return gState->password;}
+    if(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD){*capacity=64;return gState->password;}
     if(gEdit==E_DIRECTORY){*capacity=1024;return gState->invite;}
     if(gEdit==E_FRIEND_ID){*capacity=64;return gState->query;}
     *capacity=32;return gState->nickname;
@@ -461,6 +481,7 @@ static void Click(Control *c) {
     case A_REQUEST:if(gState->selectedFriend<gState->friendCount && gState->selectedFriend<8)Request(c->value,0);break;
     case A_COPY_ID:Request(NUI_REQUEST_COPY_PLAYER_ID,0);break;
     case A_RESULT_PAGE:gResultOffset=gResultOffset?0:4;gLayoutDirty=1;break;
+    case A_DIRECTORY_PAGE:if(gState->statusCode!=300&&gState->statusCode!=307)Request(c->value,NUI_FIELD_QUERY);break;
     case A_TOGGLE:gState->policyBits^=c->value;Request(NUI_REQUEST_POLICY,NUI_FIELD_POLICY);break;
     case A_GRID:gState->grid=gState->grid>=60?0:gState->grid+1;Request(NUI_REQUEST_POLICY,NUI_FIELD_GRID);break;
     case A_LAPS:gState->laps=gState->laps>=60?0:gState->laps+1;Request(NUI_REQUEST_POLICY,NUI_FIELD_LAPS);break;
@@ -475,7 +496,8 @@ static void Click(Control *c) {
     case A_SELECT_FRIEND:if(c->value<gState->friendCount && c->value<8)gState->selectedFriend=c->value;break;
     case A_INVITE_FRIEND:if(gState->selectedFriend<gState->friendCount && gState->selectedFriend<8)Request(NUI_REQUEST_FRIEND_INVITE,0);break;
     case A_EDIT:gEdit=c->value;gReturnPage=gState->page;dst=EditTarget(&cap);
-        if(gEdit==E_FRIEND_ID)gEditText[0]=0;else Copy(gEditText,dst,sizeof(gEditText));
+        if(gEdit==E_FRIEND_ID||gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD)Zero(gEditText,sizeof(gEditText));
+        else Copy(gEditText,dst,sizeof(gEditText));
         gCaret=Len(gEditText,sizeof(gEditText));gSelectAll=0;
         Keyboard();if(gKeyboard.ptr){gState->page=NUI_KEYBOARD;gEditEpoch=gEditEpoch%2047+1;NativeNetwork(gState)->editToken=gEditEpoch;}break;
     case A_KEY:case A_SPACE:{
@@ -485,11 +507,12 @@ static void Click(Control *c) {
     case A_CLEAR:gEditText[0]=0;gCaret=0;gSelectAll=0;break;
     case A_PASTE:Request(NUI_REQUEST_PASTE,gEdit);break;
     case A_DELETE:if(gSelectAll){gEditText[0]=0;gCaret=0;gSelectAll=0;}else if(gCaret){U32 previous=PreviousChar(gCaret);Erase(previous,gCaret);gCaret=previous;}break;
-    case A_CANCEL:gState->page=gReturnPage;gEdit=0;NativeNetwork(gState)->editToken=0;break;
+    case A_CANCEL:if(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD)Zero(gEditText,sizeof(gEditText));gState->page=gReturnPage;gEdit=0;NativeNetwork(gState)->editToken=0;break;
     case A_CONFIRM:dst=EditTarget(&cap);Copy(dst,gEditText,cap);
         if(gEdit==E_QUERY){gState->roomCount=0;gState->selectedRoom=~0U;gState->statusCode=0;gState->statusText[0]=0;gRoomsExpanded=0;gResultOffset=0;gLayoutDirty=1;}
-        field=gEdit==E_ROOM?NUI_FIELD_ROOM_NAME:gEdit==E_QUERY?NUI_FIELD_QUERY:gEdit==E_PASSWORD?NUI_FIELD_PASSWORD:NUI_FIELD_NICKNAME;
-        kind=gEdit==E_DIRECTORY?NUI_REQUEST_DIRECTORY:gEdit==E_FRIEND_ID?NUI_REQUEST_ADD_FRIEND:gEdit==E_ROOM?NUI_REQUEST_ROOM_NAME:gEdit==E_QUERY?NUI_REQUEST_NONE:gEdit==E_PASSWORD?NUI_REQUEST_PASSWORD:NUI_REQUEST_NICKNAME;
+        field=gEdit==E_ROOM?NUI_FIELD_ROOM_NAME:gEdit==E_QUERY?NUI_FIELD_QUERY:(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD)?NUI_FIELD_PASSWORD:NUI_FIELD_NICKNAME;
+        kind=gEdit==E_DIRECTORY?NUI_REQUEST_DIRECTORY:gEdit==E_FRIEND_ID?NUI_REQUEST_ADD_FRIEND:gEdit==E_ROOM?NUI_REQUEST_ROOM_NAME:gEdit==E_QUERY?NUI_REQUEST_NONE:gEdit==E_PASSWORD?NUI_REQUEST_PASSWORD:gEdit==E_JOIN_PASSWORD?NUI_REQUEST_JOIN_PASSWORD:NUI_REQUEST_NICKNAME;
+        if(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD)Zero(gEditText,sizeof(gEditText));
         if(kind)Request(kind,field);gState->page=gReturnPage;gEdit=0;NativeNetwork(gState)->editToken=0;break;
     }
     Refresh();
@@ -522,6 +545,7 @@ static void Refresh(void) {
     if(page>NUI_CONNECTION)page=gState->page=NUI_MAIN;
     if(gState->statusCode==200){
         if(page==NUI_KEYBOARD && gEdit){U32 cap;EditTarget(&cap);Copy(gEditText,(const char*)gState->rooms,cap);gCaret=Len(gEditText,sizeof(gEditText));gSelectAll=0;}
+        if(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD)Zero(gState->rooms,1024);
         gState->statusCode=0;
     }
     Visible(gCenter.ptr,page==NUI_MAIN);Visible(gKeyboard.ptr,page==NUI_KEYBOARD);Visible(gPanel.ptr,page!=NUI_KEYBOARD);
@@ -537,9 +561,13 @@ static void Refresh(void) {
         else if(c->action==A_SELECT_FRIEND)Selection(c,c->value==gState->selectedFriend && c->value<gState->friendCount);
         if(c->visual.ptr){
             U32 wanted=c->page==page || (c->page==99 && page!=NUI_KEYBOARD && page!=NUI_MAIN);
-            if(c->action==A_SELECT_ROOM)wanted=wanted && gRoomsExpanded && c->value<gState->roomCount && c->value>=gResultOffset && c->value<gResultOffset+4 && c->value<8;
+            if(c->action==A_SELECT_ROOM)wanted=wanted && gRoomsExpanded && c->value<gState->roomCount && c->value<4;
             if(c->action==A_SELECT_FRIEND)wanted=wanted && c->value<gState->friendCount && c->value>=gResultOffset && c->value<gResultOffset+4 && c->value<8;
-            if(c->action==A_RESULT_PAGE)wanted=wanted && (page!=NUI_FIND||gRoomsExpanded) && (page==NUI_FIND?gState->roomCount:gState->friendCount)>4;
+            if(c->action==A_RESULT_PAGE)wanted=wanted && gState->friendCount>4;
+            if(c->action==A_DIRECTORY_PAGE){
+                U32 flag=c->value==NUI_REQUEST_PREVIOUS_ROOMS?NUI_BRIDGE_PREVIOUS_ROOMS:NUI_BRIDGE_NEXT_ROOMS;
+                wanted=wanted && gRoomsExpanded && gState->statusCode!=300 && gState->statusCode!=307 && (gState->bridgeFlags&flag);
+            }
             if(wanted!=c->attached){
                 if(wanted)((PairArg)Api(0x14684c0))(gRoot,0,&c->visual);
                 else ((PairArg)Virtual(gRoot,0xe8))(gRoot,0,&c->visual);
@@ -555,14 +583,14 @@ static void Refresh(void) {
                 U32 cursor=gCaret,start=cursor,end=cursor,j,k=0;
                 for(j=0;j<22&&start;j++)start=PreviousChar(start);
                 for(j=0;j<14&&gEditText[end];j++)end=NextChar(end);
-                if(!gEditText[0])Copy(text,gEdit==E_PASSWORD?"Enter password":"Type or click a key",sizeof(text));
+                if(!gEditText[0])Copy(text,(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD)?"Enter password":"Type or click a key",sizeof(text));
                 else{
                     if(start){text[k++]='.';text[k++]='.';}
                     if(gSelectAll)text[k++]='[';
                     for(j=start;j<end;){
                         U32 next=NextChar(j);
                         if(j==cursor&&!gSelectAll){text[k++]='[';text[k++]=']';}
-                        if(gEdit==E_PASSWORD){text[k++]='*';j=next;}
+                        if(gEdit==E_PASSWORD||gEdit==E_JOIN_PASSWORD){text[k++]='*';j=next;}
                         else while(j<next)text[k++]=gEditText[j++];
                     }
                     if(cursor==end&&!gSelectAll){text[k++]='[';text[k++]=']';}
@@ -574,6 +602,10 @@ static void Refresh(void) {
             }continue;}
         if(c->action==A_SELECT_ROOM || c->action==A_SELECT_FRIEND){U32 count=c->action==A_SELECT_ROOM?gState->roomCount:gState->friendCount;U32 selected=c->action==A_SELECT_ROOM?gState->selectedRoom:gState->selectedFriend;NativeUiEntry *entries=c->action==A_SELECT_ROOM?gState->rooms:gState->friends;
             Visible(c->visual.ptr,c->page==page && c->attached);
+            if(c->lockIcon.ptr){
+                U32 locked=c->value<count && (gState->protectedRoomMask&(1U<<c->value))!=0;
+                if(c->lockVisible!=locked){Visible(c->lockIcon.ptr,locked);c->lockVisible=locked;gLayoutDirty=1;}
+            }
             if(c->value<count && c->value<8){Copy(text,selected==c->value?"> ":"",sizeof(text));Append(text,entries[c->value].label,sizeof(text));Label(c,text);}continue;}
         if(c->action==A_JOIN_ROOM){U32 phase=NativeNetwork(gState)->joinPhase;Enabled(c->button.ptr,(phase<NJ_QUEUED||phase>NJ_DISPATCHED)&&gState->statusCode!=307&&(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY) && gState->selectedRoom<gState->roomCount && gState->selectedRoom<8 && (NativeNetwork(gState)->joinableMask&(1U<<gState->selectedRoom)));}
         if(c->action==A_DIRECT_JOIN)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DIRECT_QUERY)!=0);
@@ -593,7 +625,7 @@ static void Refresh(void) {
         else if(c->action==A_JOIN_ROOM)Copy(text,gState->selectedRoom<gState->roomCount && (!(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY)||gState->selectedRoom>=8||!(NativeNetwork(gState)->joinableMask&(1U<<gState->selectedRoom)))?"ROOM FULL OR NATIVE JOIN UNAVAILABLE":"JOIN SELECTED ROOM",sizeof(text));
         else if(c->action==A_TOGGLE){prefix=c->value==NUI_MUTATORS?"Mutators":c->value==NUI_CHEATS?"Cheats":c->value==NUI_OWNED_CARS?"Owned cars required":c->value==NUI_IGNORE_CLASS?"Ignore class":c->value==NUI_FILL_AI?"Fill empty slots with AI":"Private room";Copy(text,prefix,sizeof(text));Append(text,gState->policyBits&c->value?": ON":": OFF",sizeof(text));}
         else if(c->action==A_GRID || c->action==A_LAPS){U32 value=c->action==A_GRID?gState->grid:gState->laps;Copy(text,c->action==A_GRID?"Grid: ":"Laps: ",sizeof(text));if(!value)Append(text,"Default",sizeof(text));else{Number(num,value);Append(text,num,sizeof(text));}}
-        else if(c->action==A_EDIT && c->value<=E_NICKNAME){prefix=c->value==E_ROOM?"Room name: ":c->value==E_QUERY?"Search: ":"Nickname: ";Copy(text,prefix,sizeof(text));Append(text,c->value==E_ROOM?gState->roomName:c->value==E_QUERY?gState->query:gState->nickname,sizeof(text));}
+        else if(c->action==A_EDIT && c->value<=E_NICKNAME){prefix=c->value==E_ROOM?"Room name: ":c->value==E_QUERY?"Search: ":"Nickname: ";Copy(text,prefix,sizeof(text));Append(text,c->value==E_ROOM?gState->roomName:c->value==E_QUERY?(gState->query[0]?gState->query:"All rooms"):gState->nickname,sizeof(text));}
         else if(c->page==99){
             if(gBuildFailures)Copy(text,"Some native controls could not load",sizeof(text));
             else if(gKeyboardAttempt && !gKeyboard.ptr)Copy(text,"Native keyboard resource unavailable",sizeof(text));
