@@ -38,6 +38,7 @@ internal sealed class TrainerContext : ApplicationContext
     private readonly TrainerForm trainer;
     private readonly NotifyIcon tray;
     private readonly NativeLobbyBridge nativeLobby;
+    private readonly NativeKeyboardInput nativeKeyboard;
 
     public TrainerContext(bool showMenu)
     {
@@ -62,6 +63,7 @@ internal sealed class TrainerContext : ApplicationContext
         };
         tray.DoubleClick += (_, __) => trainer.ToggleVisible();
         nativeLobby = new NativeLobbyBridge();
+        nativeKeyboard = new NativeKeyboardInput();
         LaunchGame();
     }
 
@@ -77,6 +79,7 @@ internal sealed class TrainerContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        nativeKeyboard.Dispose();
         nativeLobby.Dispose();
         tray.Visible = false;
         tray.Dispose();

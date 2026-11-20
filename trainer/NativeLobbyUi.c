@@ -47,6 +47,7 @@ static U32 gNamespacesLoaded;
 static U32 gLayoutDirty;
 static U32 gLowercase,gResultOffset;
 static U32 gLaunchLan;
+static U32 gEditEpoch,gCaret,gSelectAll;
 static U32 gRoomsExpanded;
 
 void * __cdecl memset(void *p,int value,unsigned count);
@@ -55,6 +56,14 @@ void * __cdecl memset(void *p,int value,unsigned count) {
     volatile unsigned char *q=(volatile unsigned char*)p;
     while(count--)*q++=(unsigned char)value;
     return p;
+}
+void * __cdecl memcpy(void *destination,const void *source,unsigned count);
+#pragma function(memcpy)
+void * __cdecl memcpy(void *destination,const void *source,unsigned count) {
+    volatile unsigned char *out=(volatile unsigned char*)destination;
+    const unsigned char *in=(const unsigned char*)source;
+    while(count--)*out++=*in++;
+    return destination;
 }
 static void Zero(void *p,U32 n) { volatile unsigned char *q=(volatile unsigned char*)p; while(n--) *q++=0; }
 static U32 Len(const char *s,U32 max) { U32 n=0; while(n<max && s[n]) ++n; return n; }
@@ -77,7 +86,7 @@ static void ConfigureFrame(void *root,const char *name,int keyboard) {
         /* Supported FixedSizeContainer layout: percentages, with aspect
          * constraint disabled. These are our generated resource instances. */
         *((unsigned char*)frame.ptr+0xb4)=0;
-        *(U32*)((char*)frame.ptr+0xac)=0x3f666666U;
+        *(U32*)((char*)frame.ptr+0xac)=keyboard?0x3f3851ecU:0x3f666666U;
         *(U32*)((char*)frame.ptr+0xb0)=keyboard?0x3f000000U:0x3f666666U;
     }
     DropPair(&frame);
@@ -233,17 +242,19 @@ static void Build(void) {
     Button(99,0,0,"Room policy bridge pending");
 }
 static void KeyboardKey(const char *name,U32 action,U32 value) {
-    Control *c;Pair generic;Delegate d;char title[16];
+    Control *c;Pair generic;Delegate d;char title[16];Vec2 limit;
     if(gCount>=128)return;c=&gControls[gCount];Zero(c,sizeof(*c));
     Find(gKeyboard.ptr,name,&generic);if(generic.ptr)((CastButton)Api(0x500890))(&c->button,&generic);DropPair(&generic);
     if(!c->button.ptr){++gBuildFailures;return;}
     Momentary(c->button.ptr);
     c->generation=gGeneration;c->page=NUI_KEYBOARD;c->action=action;c->value=value;
+    limit.x=0x447a0000U;limit.y=action?0x40c00000U:0x40e00000U;
+    ((VecArg)Virtual(c->button.ptr,0x30))(c->button.ptr,0,&limit);
     if(action==A_KEY){title[0]=(char)value;title[1]=0;Label(c,title);}
     else if(action==A_SPACE)Label(c,"SPACE");
-    else if(action==A_DELETE)Label(c,"DELETE");
+    else if(action==A_DELETE)Label(c,"BACK");
     else if(action==A_CANCEL)Label(c,"CANCEL");
-    else if(action==A_CONFIRM)Label(c,"CONFIRM");
+    else if(action==A_CONFIRM)Label(c,"DONE");
     else if(action==A_SHIFT)Label(c,"CASE: UPPER");
     else if(action==A_PASTE)Label(c,"PASTE");
     else if(action==A_CLEAR)Label(c,"CLEAR");
@@ -276,8 +287,33 @@ static char *EditTarget(U32 *capacity) {
     if(gEdit==E_FRIEND_ID){*capacity=64;return gState->query;}
     *capacity=32;return gState->nickname;
 }
+static U32 PreviousChar(U32 pos) {
+    if(pos)do{--pos;}while(pos&&((unsigned char)gEditText[pos]&0xc0)==0x80);
+    return pos;
+}
+static U32 NextChar(U32 pos) {
+    if(gEditText[pos])do{++pos;}while(((unsigned char)gEditText[pos]&0xc0)==0x80);
+    return pos;
+}
+static void Erase(U32 first,U32 last) {
+    do{gEditText[first++]=gEditText[last];}while(gEditText[last++]);
+}
+static void InsertCharacter(U32 code) {
+    char bytes[4];U32 size,cap,length,i;
+    if(code<32||(code>=127&&code<160)||(code>=0xd800&&code<=0xdfff)||code>0x10ffff)return;
+    if(code<128){bytes[0]=(char)code;size=1;}
+    else if(code<0x800){bytes[0]=(char)(0xc0|(code>>6));size=2;}
+    else if(code<0x10000){bytes[0]=(char)(0xe0|(code>>12));size=3;}
+    else{bytes[0]=(char)(0xf0|(code>>18));size=4;}
+    for(i=1;i<size;++i)bytes[i]=(char)(0x80|((code>>(6*(size-1-i)))&63));
+    EditTarget(&cap);length=gSelectAll?0:Len(gEditText,sizeof(gEditText));
+    if(length+size>=cap)return;
+    if(gSelectAll){gEditText[0]=0;gCaret=0;gSelectAll=0;}
+    for(i=length+1;i>gCaret;--i)gEditText[i-1+size]=gEditText[i-1];
+    for(i=0;i<size;++i)gEditText[gCaret++]=bytes[i];
+}
 static void Click(Control *c) {
-    U32 cap,n,field,kind;char *dst;
+    U32 cap,field,kind;char *dst;
     switch(c->action){
     case A_PAGE:gState->page=c->value;gResultOffset=0;break;
     case A_SOCIAL_PAGE:gState->page=c->value;gResultOffset=0;gState->friendCount=0;
@@ -300,28 +336,52 @@ static void Click(Control *c) {
     case A_INVITE_FRIEND:if(gState->selectedFriend<gState->friendCount && gState->selectedFriend<8)Request(NUI_REQUEST_FRIEND_INVITE,0);break;
     case A_EDIT:gEdit=c->value;gReturnPage=gState->page;dst=EditTarget(&cap);
         if(gEdit==E_FRIEND_ID)gEditText[0]=0;else Copy(gEditText,dst,sizeof(gEditText));
-        Keyboard();if(gKeyboard.ptr)gState->page=NUI_KEYBOARD;break;
-    case A_KEY:case A_SPACE:dst=EditTarget(&cap);(void)dst;n=Len(gEditText,sizeof(gEditText));if(n+1<cap && n+1<sizeof(gEditText)){
+        gCaret=Len(gEditText,sizeof(gEditText));gSelectAll=0;
+        Keyboard();if(gKeyboard.ptr){gState->page=NUI_KEYBOARD;gEditEpoch=gEditEpoch%2047+1;NativeNetwork(gState)->editToken=gEditEpoch;}break;
+    case A_KEY:case A_SPACE:{
         U32 key=c->action==A_SPACE?' ':c->value;if(gLowercase && key>='A' && key<='Z')key+=32;
-        gEditText[n]=(char)key;gEditText[n+1]=0;}break;
+        InsertCharacter(key);break;}
     case A_SHIFT:gLowercase=!gLowercase;break;
-    case A_CLEAR:gEditText[0]=0;break;
+    case A_CLEAR:gEditText[0]=0;gCaret=0;gSelectAll=0;break;
     case A_PASTE:Request(NUI_REQUEST_PASTE,gEdit);break;
-    case A_DELETE:n=Len(gEditText,sizeof(gEditText));if(n){--n;while(n && ((unsigned char)gEditText[n]&0xc0)==0x80)--n;gEditText[n]=0;}break;
-    case A_CANCEL:gState->page=gReturnPage;gEdit=0;break;
+    case A_DELETE:if(gSelectAll){gEditText[0]=0;gCaret=0;gSelectAll=0;}else if(gCaret){U32 previous=PreviousChar(gCaret);Erase(previous,gCaret);gCaret=previous;}break;
+    case A_CANCEL:gState->page=gReturnPage;gEdit=0;NativeNetwork(gState)->editToken=0;break;
     case A_CONFIRM:dst=EditTarget(&cap);Copy(dst,gEditText,cap);
         if(gEdit==E_QUERY){gState->roomCount=0;gState->selectedRoom=~0U;gState->statusCode=0;gState->statusText[0]=0;gRoomsExpanded=0;gResultOffset=0;gLayoutDirty=1;}
         field=gEdit==E_ROOM?NUI_FIELD_ROOM_NAME:gEdit==E_QUERY?NUI_FIELD_QUERY:gEdit==E_PASSWORD?NUI_FIELD_PASSWORD:NUI_FIELD_NICKNAME;
         kind=gEdit==E_DIRECTORY?NUI_REQUEST_DIRECTORY:gEdit==E_FRIEND_ID?NUI_REQUEST_ADD_FRIEND:gEdit==E_ROOM?NUI_REQUEST_ROOM_NAME:gEdit==E_QUERY?NUI_REQUEST_NONE:gEdit==E_PASSWORD?NUI_REQUEST_PASSWORD:NUI_REQUEST_NICKNAME;
-        if(kind)Request(kind,field);gState->page=gReturnPage;gEdit=0;break;
+        if(kind)Request(kind,field);gState->page=gReturnPage;gEdit=0;NativeNetwork(gState)->editToken=0;break;
     }
     Refresh();
+}
+static void PhysicalKey(NativeNetworkState *network) {
+    U32 sequence=network->keySequence,word,code;
+    Control command;
+    if(sequence==network->keyAck)return;
+    word=network->keyWord;
+    network->keyAck=sequence;
+    if(!network->editToken||word>>21!=network->editToken||!gEdit||gState->page!=NUI_KEYBOARD)return;
+    code=word&0x1fffff;
+    switch(code){
+    case 0x110000:command.action=A_CONFIRM;break;
+    case 0x110001:command.action=A_CANCEL;break;
+    case 0x110002:command.action=A_DELETE;break;
+    case 0x110003:command.action=A_PASTE;break;
+    case 0x110004:gSelectAll=1;return;
+    case 0x110005:gCaret=gSelectAll?0:PreviousChar(gCaret);gSelectAll=0;return;
+    case 0x110006:gCaret=gSelectAll?Len(gEditText,sizeof(gEditText)):NextChar(gCaret);gSelectAll=0;return;
+    case 0x110007:gCaret=0;gSelectAll=0;return;
+    case 0x110008:gCaret=Len(gEditText,sizeof(gEditText));gSelectAll=0;return;
+    case 0x110009:if(gSelectAll){gEditText[0]=0;gCaret=0;gSelectAll=0;}else Erase(gCaret,NextChar(gCaret));return;
+    default:InsertCharacter(code);return;
+    }
+    Click(&command);
 }
 static void Refresh(void) {
     U32 i,page=gState->page;char text[192],num[16];Control *c;const char *prefix;
     if(page>NUI_CONNECTION)page=gState->page=NUI_MAIN;
     if(gState->statusCode==200){
-        if(page==NUI_KEYBOARD && gEdit){U32 cap;EditTarget(&cap);Copy(gEditText,(const char*)gState->rooms,cap);}
+        if(page==NUI_KEYBOARD && gEdit){U32 cap;EditTarget(&cap);Copy(gEditText,(const char*)gState->rooms,cap);gCaret=Len(gEditText,sizeof(gEditText));gSelectAll=0;}
         gState->statusCode=0;
     }
     Visible(gCenter.ptr,page==NUI_MAIN);Visible(gKeyboard.ptr,page==NUI_KEYBOARD);Visible(gPanel.ptr,page!=NUI_KEYBOARD);
@@ -350,8 +410,28 @@ static void Refresh(void) {
         if(c->visual.ptr)Visible(c->visual.ptr,c->page==page || (c->page==99 && page!=NUI_KEYBOARD && page!=NUI_MAIN));
         if(c->page==NUI_KEYBOARD){
             if(c->action==A_KEY && c->value>='A' && c->value<='Z'){text[0]=(char)(c->value+(gLowercase?32:0));text[1]=0;Label(c,text);}
-            else if(c->action==A_SHIFT)Label(c,gLowercase?"CASE: LOWER":"CASE: UPPER");
-            else if(!c->action){if(gEdit==E_PASSWORD){U32 n=Len(gEditText,63),j;for(j=0;j<n;++j)text[j]='*';text[n]=0;}else Copy(text,gEditText,sizeof(text));if(!text[0])Copy(text,"Enter text",sizeof(text));Label(c,text);}continue;}
+            else if(c->action==A_SHIFT)Label(c,gLowercase?"ABC":"abc");
+            else if(!c->action){
+                U32 cursor=gCaret,start=cursor,end=cursor,j,k=0;
+                for(j=0;j<22&&start;j++)start=PreviousChar(start);
+                for(j=0;j<14&&gEditText[end];j++)end=NextChar(end);
+                if(!gEditText[0])Copy(text,gEdit==E_PASSWORD?"Enter password":"Type or click a key",sizeof(text));
+                else{
+                    if(start){text[k++]='.';text[k++]='.';}
+                    if(gSelectAll)text[k++]='[';
+                    for(j=start;j<end;){
+                        U32 next=NextChar(j);
+                        if(j==cursor&&!gSelectAll){text[k++]='[';text[k++]=']';}
+                        if(gEdit==E_PASSWORD){text[k++]='*';j=next;}
+                        else while(j<next)text[k++]=gEditText[j++];
+                    }
+                    if(cursor==end&&!gSelectAll){text[k++]='[';text[k++]=']';}
+                    if(gSelectAll)text[k++]=']';
+                    if(gEditText[end]){text[k++]='.';text[k++]='.';}
+                    text[k]=0;
+                }
+                Label(c,text);
+            }continue;}
         if(c->action==A_SELECT_ROOM || c->action==A_SELECT_FRIEND){U32 count=c->action==A_SELECT_ROOM?gState->roomCount:gState->friendCount;U32 selected=c->action==A_SELECT_ROOM?gState->selectedRoom:gState->selectedFriend;NativeUiEntry *entries=c->action==A_SELECT_ROOM?gState->rooms:gState->friends;
             Visible(c->visual.ptr,c->page==page && c->attached);
             if(c->value<count && c->value<8){Copy(text,selected==c->value?"> ":"",sizeof(text));Append(text,entries[c->value].label,sizeof(text));Label(c,text);}continue;}
@@ -408,7 +488,7 @@ __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState 
     if(NativeLobbyPolicyTick(module,screen,shared)){
         gState=shared;Request(NUI_REQUEST_POLICY,NUI_FIELD_POLICY);
     }
-    if(*(U32*)screen!=module+0x1d45bacU)return;gModule=module;
+    if(*(U32*)screen!=module+0x1d45bacU){NativeNetwork(shared)->editToken=0;return;}gModule=module;
     if(!shared->magic){Zero(shared,sizeof(*shared));shared->magic=NATIVE_UI_MAGIC;shared->version=NATIVE_UI_VERSION;shared->size=sizeof(*shared);shared->policyBits=NUI_OWNED_CARS|NUI_FILL_AI;Copy(shared->roomName,"Asphalt 8 room",64);}
     if(shared->magic!=NATIVE_UI_MAGIC || shared->version!=NATIVE_UI_VERSION || shared->size<sizeof(*shared))return;
     outer=*(void**)((char*)screen+0x15c);if(!outer)return;gState=shared;
@@ -419,7 +499,7 @@ __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState 
             Text(&reference,"offline_lobby_ui");((void (__stdcall *)(U32))Api(0xa6a280))(reference);
             gNamespacesLoaded=1;
         }
-        ResetRoot();gSceneRoot.ptr=outer;gSceneRoot.control=*(void**)((char*)screen+0x160);
+        ResetRoot();NativeNetwork(shared)->editToken=0;gSceneRoot.ptr=outer;gSceneRoot.control=*(void**)((char*)screen+0x160);
         if(gSceneRoot.control){volatile long *strong=(volatile long*)((char*)gSceneRoot.control+4);
             __asm {
                 mov eax,strong
@@ -437,6 +517,11 @@ __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState 
         ((PairArg)Api(0x14684c0))(gHostCenter.ptr,0,&gPanel);
         shared->page=NUI_MAIN;Build();
     }
-    if(gRoot)Refresh();
+    if(gRoot){
+        if(shared->statusCode==200)Refresh();
+        if(shared->requestKind!=NUI_REQUEST_PASTE||shared->requestSeq==shared->ackSeq)
+            PhysicalKey(NativeNetwork(shared));
+        Refresh();
+    }
     if(gLaunchLan){U32 direct=gLaunchLan==2;gLaunchLan=0;if(direct)NativeLanBeginDirect(module,screen,shared);else NativeLanBegin(module,screen,shared);}
 }

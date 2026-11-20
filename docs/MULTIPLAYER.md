@@ -70,6 +70,8 @@ The native Fill with AI bridge invokes the original button callback at preferred
 
 ## Native social bridge
 
+The orange in-game editor accepts physical keyboard input and mouse clicks in the same field. Use the arrow keys, Home and End to position the cursor, Backspace or Delete to edit, Ctrl+A to select the text, and Ctrl+V to paste. Enter confirms the field and Escape cancels the edit. Input is captured only while the game is in the foreground and its editor is open.
+
 Find by Name presents directory results in a collapsible native room selector. Search opens the list; selecting an entry collapses it and keeps the selection highlighted when reopened. Up to four rows are shown at once, with More Results for the second group of the eight-result limit. Empty/loading/unavailable/failed searches have distinct labels. New searches and confirmed query edits clear stale results and selection; late responses for an edited query are discarded. Background social checks do not overwrite the search status while this page is visible.
 
 Listings explicitly distinguish `asphalt480-udp` native rooms from `room-control-tcp` prototype rooms. **JOIN SELECTED** is enabled only for eligible native IPv4 listings with a valid nonzero native ID, actual lobby port and available capacity. It freshly resolves the lease and checks identity and selection again before queueing the native command. TCP listings are never passed to the native join adapter, and native listings are rejected by the prototype TCP invitation resolver.

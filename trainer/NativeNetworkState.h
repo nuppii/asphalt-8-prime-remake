@@ -17,7 +17,8 @@ typedef struct NativeNetworkState {
     unsigned clientConnected,clientIdLow,clientIdHigh,clientLobbyPort;
     unsigned joinSeq,joinAck,joinPhase,joinIdLow,joinIdHigh;
     char joinAddress[16],joinName[64];
-    unsigned joinableMask,hostEndRevision,joinLobbyPort,reserved[4];
+    unsigned joinableMask,hostEndRevision,joinLobbyPort;
+    unsigned editToken,keyWord,keySequence,keyAck;
 } NativeNetworkState;
 #pragma pack(pop)
 typedef char NativeNetworkSizeMustMatch[(sizeof(NativeNetworkState)==NATIVE_NETWORK_BYTES)?1:-1];
