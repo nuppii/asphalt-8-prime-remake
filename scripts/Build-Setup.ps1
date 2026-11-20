@@ -10,7 +10,7 @@ $launcher = Join-Path $stage 'offline-launcher.exe'
 
 $arguments = @(
     '-m', 'PyInstaller', '--noconfirm', '--onefile', '--windowed',
-    '--name', 'Asphalt8OfflineLab-Setup',
+    '--name', 'Asphalt8PrimeRemake-Setup',
     '--distpath', $output, '--workpath', $stage, '--specpath', $stage,
     '--paths', (Join-Path $repo 'tools\native-ui'),
     '--add-data', "$launcher;.",
@@ -18,4 +18,4 @@ $arguments = @(
 )
 & python @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Setup packaging failed.' }
-Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $output 'Asphalt8OfflineLab-Setup.exe')
+Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $output 'Asphalt8PrimeRemake-Setup.exe')

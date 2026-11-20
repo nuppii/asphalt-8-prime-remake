@@ -1,4 +1,4 @@
-# Asphalt 8 Offline Lab
+# Asphalt 8 Prime Remake
 
 **An open-source offline launcher and Insert-key trainer for Asphalt 8: Airborne, Windows x86 build 4.8.0.7.**
 
@@ -8,9 +8,11 @@ This independent project accepts your own original Windows 4.8.0.7 package or ex
 
 ## Install with one EXE
 
-1. Download **Asphalt8OfflineLab-Setup.exe** from [Releases](https://github.com/nuppii/asphalt8-offline-lab/releases).
-2. In Setup, choose your compatible Windows `.appx` or `.msix` package, or its already extracted game folder. Choose a parent folder for the new **Asphalt 8 Offline Lab** installation.
-3. Click **Install**, then open **Asphalt 8 Airborne 4.8.exe** in the new folder. Press **Insert** for the trainer.
+1. Download **Asphalt8PrimeRemake-Setup.exe** from [Releases](https://github.com/nuppii/asphalt-8-prime-remake/releases).
+2. In Setup, choose your compatible Windows `.appx` or `.msix` package, or its already extracted game folder. Choose a parent folder for the new **Asphalt 8 Prime Remake** installation.
+3. Click **Install**, then open **Asphalt 8 Prime Remake.exe** in the new folder. Press **Insert** for the trainer.
+
+To update a copy installed with the previous setup, choose its existing folder in the new setup. The Windows package family and save data carry over.
 
 Setup includes the Windows trainer and its resource builder. Windows must already permit loose package registration and have the game's x86 `Microsoft.VCLibs.120.00` dependency. The engine stays on 4.8.0.7. Setup registers a separate offline package identity from the Microsoft Store release and has no updater. Setup does not change global Store settings or firewall rules. Player-hosted multiplayer can still use the network.
 
@@ -98,7 +100,7 @@ The executable goes to `build/release`. The build does not read or embed a game 
 
 ```powershell
 .\scripts\Install-Offline.ps1 `
-  -GameDirectory 'D:\Games\Asphalt8-Offline' `
+  -GameDirectory 'D:\Games\Asphalt 8 Prime Remake' `
   -MsvcBin 'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx86\x86'
 ```
 
@@ -107,19 +109,19 @@ The MSVC path above is an example from the development machine; adjust it to you
 The resulting launcher is placed directly in the selected game folder:
 
 ```text
-Asphalt 8 Airborne 4.8.exe
+Asphalt 8 Prime Remake.exe
 ```
 
 Launch that executable and press **Insert**. You can create a Windows shortcut to it. The tray menu also exposes **Show / hide**, **Launch game** and **Exit trainer**.
 
-The offline Windows registration revision is 4.8.0.9. The engine is still the supported 4.8.0.7 build. Existing installations of Offline Lab retain their offline package family.
+The offline Windows registration revision is 4.8.0.10. The engine is still the supported 4.8.0.7 build. Existing installations retain their Windows package family and save data.
 
 For an already registered offline copy, build just the trainer:
 
 ```powershell
 .\trainer\Build-Trainer.ps1 `
   -MsvcBin '<your Hostx86\x86 directory>' `
-  -Output 'D:\Games\Asphalt8-Offline\Asphalt 8 Airborne 4.8.exe'
+  -Output 'D:\Games\Asphalt 8 Prime Remake\Asphalt 8 Prime Remake.exe'
 ```
 
 Close the game and existing trainer before replacing the launcher. Restart the game after an update so the new trainer starts from original in-memory bytes.

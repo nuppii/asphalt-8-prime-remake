@@ -164,7 +164,7 @@ class DirectoryServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "OfflineLabDirectory/1"
+    server_version = "Asphalt8PrimeRemakeDirectory/1"
 
     def setup(self):
         super().setup()

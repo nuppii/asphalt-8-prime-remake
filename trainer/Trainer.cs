@@ -55,7 +55,7 @@ internal sealed class TrainerContext : ApplicationContext
         tray = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "Asphalt 8 Trainer",
+            Text = "Asphalt 8 Prime Remake",
             Visible = true,
             ContextMenu = new ContextMenu(new[]
             {
@@ -173,7 +173,7 @@ internal sealed class TrainerForm : Form
     {
         LoadToolStates();
         LoadMutatorSettings();
-        Text = "Asphalt 8 Trainer";
+        Text = "Asphalt 8 Prime Remake";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1050, 680);
@@ -196,7 +196,7 @@ internal sealed class TrainerForm : Form
         title = new Label
         {
             AutoSize = true,
-            Text = "A8  •  OFFLINE LAB",
+            Text = "Asphalt 8 Prime Remake",
             Font = new Font("Segoe UI Semibold", 17f),
             ForeColor = Color.White,
             Location = new Point(26, 19)
@@ -211,7 +211,7 @@ internal sealed class TrainerForm : Form
             Text = "4.8.0.7  /  SOLO",
             Font = new Font("Segoe UI", 9f),
             ForeColor = accent,
-            Location = new Point(255, 26)
+            Location = new Point(title.Right + 20, 26)
         };
         header.Controls.Add(build);
 

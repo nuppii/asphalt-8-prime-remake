@@ -4,7 +4,7 @@ Read-only inspection of installed Asphalt 8 4.8.0 assets. No game/repository fil
 
 ## Native screen inventory
 
-All these resource paths resolve inside `D:/Asphalt 8 Airborne 4.8.0 Offline/Data/gui/multiplayer_menu.bgin` (491392 bytes):
+All these resource paths resolve inside `Data/gui/multiplayer_menu.bgin` (491392 bytes):
 
 | Native resource path suffix | File offset | Purpose and useful children |
 |---|---:|---|

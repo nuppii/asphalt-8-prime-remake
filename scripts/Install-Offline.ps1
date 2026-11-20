@@ -5,10 +5,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $game = (Resolve-Path -LiteralPath $GameDirectory).Path
 $repo = Split-Path -Parent $PSScriptRoot
-$launcher = Join-Path $game 'Asphalt 8 Airborne 4.8.exe'
-$legacyLauncher = Join-Path $game 'Asphalt 8 Airborne 4.8 Offline.exe'
+$launcher = Join-Path $game 'Asphalt 8 Prime Remake.exe'
+$legacyLaunchers = @(
+    (Join-Path $game 'Asphalt 8 Airborne 4.8.exe')
+    (Join-Path $game 'Asphalt 8 Airborne 4.8 Offline.exe')
+)
 if (Get-Process Asphalt8 -ErrorAction SilentlyContinue) { throw 'Close Asphalt 8 before installing.' }
-if (Get-Process | Where-Object { $_.Path -in @($launcher, $legacyLauncher) }) { throw 'Exit the existing trainer from its tray menu first.' }
+if (Get-Process | Where-Object { $_.Path -eq $launcher -or $_.Path -in $legacyLaunchers }) { throw 'Exit the existing trainer from its tray menu first.' }
 foreach ($name in 'cl.exe', 'link.exe') {
     if (!(Test-Path -LiteralPath (Join-Path $MsvcBin $name))) { throw "Missing x86 build tool: $name" }
 }
@@ -36,9 +39,11 @@ $registered = Get-AppxPackage -Name $identity.Name | Where-Object {
 if (!$registered) {
     Add-AppxPackage -Register $manifestPath
 }
-if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
-    $legacyBackup = Join-Path $game ('_offline_patch_backup\launcher-' + [Guid]::NewGuid().ToString('N') + '.exe')
-    Move-Item -LiteralPath $legacyLauncher -Destination $legacyBackup
+foreach ($legacyLauncher in $legacyLaunchers) {
+    if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
+        $legacyBackup = Join-Path $game ('_offline_patch_backup\launcher-' + [Guid]::NewGuid().ToString('N') + '.exe')
+        Move-Item -LiteralPath $legacyLauncher -Destination $legacyBackup
+    }
 }
 Write-Host "Installed. Launch: $launcher"
 Write-Host 'Press Insert to show or hide the trainer. Select English in the game language settings.'

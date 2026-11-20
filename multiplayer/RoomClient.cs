@@ -64,7 +64,7 @@ namespace OfflineLab.Multiplayer
                 localId=response.Id;snapshot=response.Snapshot;socket.ReceiveTimeout=15000;
                 sessionTicket=Convert.FromBase64String(response.SessionTicket??"");
                 if(sessionTicket.Length!=32)throw new InvalidOperationException("The room supplied an invalid player session ticket.");
-                new Thread(ReadLoop){IsBackground=true,Name="Offline Lab room client"}.Start();
+                new Thread(ReadLoop){IsBackground=true,Name="Asphalt 8 Prime Remake room client"}.Start();
             }
             catch{socket.Close();throw;}
         }

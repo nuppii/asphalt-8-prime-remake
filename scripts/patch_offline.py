@@ -2,9 +2,13 @@ from pathlib import Path
 import hashlib
 import shutil
 import argparse
+from xml.etree import ElementTree
 
 
 ORIGINAL_SHA256 = "6a5d3933f92809297631f1299c9906ec40fbb9d585a8c77115f321bfe733134c"
+PROJECT_NAME = "Asphalt 8 Prime Remake"
+PACKAGE_NAME = "YoanRochat.Asphalt8Airborne480Offline"
+PACKAGE_VERSION = "4.8.0.10"
 PATCH_OFFSET = 0xBBAE1A
 PATCH_LENGTH = 0x40
 EXPECTED_PREFIX = bytes.fromhex("68 5c aa e1 01 8b ce e8")
@@ -20,6 +24,23 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def brand_manifest(manifest: str) -> str:
+    identity = ElementTree.fromstring(manifest).find("{*}Identity")
+    if identity is None or identity.get("Name") != PACKAGE_NAME:
+        raise ValueError("Unexpected offline package identity")
+    revision = identity.get("Version")
+    if revision not in ("4.8.0.7", "4.8.0.8", "4.8.0.9", PACKAGE_VERSION):
+        raise ValueError("Unexpected offline package revision")
+    previous = f'Version="{revision}"'
+    if manifest.count(previous) != 1:
+        raise ValueError("Could not identify the offline package revision")
+    return (manifest.replace(previous, f'Version="{PACKAGE_VERSION}"', 1)
+            .replace("Asphalt 8: Airborne 4.8 Offline", PROJECT_NAME)
+            .replace("Asphalt 8: Airborne 4.8", PROJECT_NAME)
+            .replace("ms-resource:AppName", PROJECT_NAME)
+            .replace("ms-resource:ShortName", "Asphalt 8"))
 
 
 def patch_game(directory: Path) -> str:
@@ -69,12 +90,9 @@ def patch_game(directory: Path) -> str:
         raise ValueError("Unexpected original package identity")
     manifest = manifest.replace(
         'Name="GAMELOFTSA.Asphalt8Airborne"',
-        'Name="YoanRochat.Asphalt8Airborne480Offline"',
+        f'Name="{PACKAGE_NAME}"',
         1,
     )
-    manifest = manifest.replace("ms-resource:AppName", "Asphalt 8: Airborne 4.8")
-    manifest = manifest.replace("ms-resource:ShortName", "Asphalt 8")
-    manifest = manifest.replace("Asphalt 8: Airborne 4.8 Offline", "Asphalt 8: Airborne 4.8")
     if manifest.count('<Capability Name="internetClient" />') != 1:
         raise ValueError("Unexpected Internet capability in the original manifest")
     manifest = manifest.replace(
@@ -86,7 +104,7 @@ def patch_game(directory: Path) -> str:
     # The package family and the supported Asphalt8.exe build stay the same.
     if manifest.count('Version="4.8.0.7"') != 1:
         raise ValueError("Unexpected original package revision")
-    manifest = manifest.replace('Version="4.8.0.7"', 'Version="4.8.0.9"', 1)
+    manifest = brand_manifest(manifest)
     EXE.write_bytes(binary)
     MANIFEST.write_text(manifest, encoding="utf-8", newline="\n")
 

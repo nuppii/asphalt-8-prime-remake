@@ -88,7 +88,7 @@ namespace OfflineLab.Multiplayer
             listener=new TcpListener(IPAddress.Any,port);
             listener.Start(64);Port=((IPEndPoint)listener.LocalEndpoint).Port;
             rttPublish=new Timer(PublishRtt,null,Timeout.Infinite,Timeout.Infinite);
-            var thread=new Thread(AcceptLoop){IsBackground=true,Name="Offline Lab room listener"};thread.Start();
+            var thread=new Thread(AcceptLoop){IsBackground=true,Name="Asphalt 8 Prime Remake room listener"};thread.Start();
             heartbeat=new Timer(Heartbeat,null,3000,3000);
         }
         private void AcceptLoop()
@@ -102,7 +102,7 @@ namespace OfflineLab.Multiplayer
                     if(Interlocked.Increment(ref handshakes)>64)
                     {Interlocked.Decrement(ref handshakes);socket.Close();continue;}
                     TcpClient selected=socket;
-                    new Thread(()=>AcceptPeer(selected)){IsBackground=true,Name="Offline Lab room handshake"}.Start();
+                    new Thread(()=>AcceptPeer(selected)){IsBackground=true,Name="Asphalt 8 Prime Remake room handshake"}.Start();
                 }
                 catch(SocketException){if(stopped)return;if(socket!=null)socket.Close();}
                 catch(ObjectDisposedException){return;}
@@ -393,7 +393,7 @@ namespace OfflineLab.Multiplayer
                     try{foreach(WirePacket packet in outbound.GetConsumingEnumerable())
                     {RoomProtocol.Write(socket.GetStream(),packet);if(packet.Type=="redirect")server.RedirectDelivered(Member.Id);if(packet.Type=="closed")break;}}
                     catch{}finally{server.Drop(this,"Connection closed.");}
-                }){IsBackground=true,Name="Offline Lab room sender"}.Start();
+                }){IsBackground=true,Name="Asphalt 8 Prime Remake room sender"}.Start();
             }
             internal void Send(WirePacket packet)
             {if(Closed)return;try{if(!outbound.TryAdd(packet))server.Drop(this,"Room client cannot keep up.");}catch(InvalidOperationException){}}

@@ -12,11 +12,11 @@ from zipfile import BadZipFile, ZipFile
 
 from bgin import Document
 from build_native_ui import build_keyboard_document, build_panel_document, build_roster_document
-from patch_offline import patch_game, sha256
+from patch_offline import PACKAGE_NAME, PACKAGE_VERSION, PROJECT_NAME, brand_manifest, patch_game, sha256
 
 
-LAUNCHER = "Asphalt 8 Airborne 4.8.exe"
-PACKAGE_NAME = "YoanRochat.Asphalt8Airborne480Offline"
+LAUNCHER = f"{PROJECT_NAME}.exe"
+LEGACY_LAUNCHER = "Asphalt 8 Airborne 4.8.exe"
 PAYLOAD = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "offline-launcher.exe"
 BUILD_LOCK = "offline-build.sha256"
 REGISTRATION = r"""
@@ -34,7 +34,7 @@ $installed = Get-AppxPackage -Name YoanRochat.Asphalt8Airborne480Offline
 if ($installed | Where-Object { $_.InstallLocation -ne $root }) {
     throw 'An offline copy is registered in another folder. Select that copy to update it.'
 }
-if (!$installed -or $installed.Version -ne [version]'4.8.0.9') {
+if (!$installed -or $installed.Version -ne [version]$env:ASPHALT_OFFLINE_SETUP_VERSION) {
     Add-AppxPackage -Register (Join-Path $root 'AppxManifest.xml')
 }
 """
@@ -81,13 +81,23 @@ def build_resources(folder):
         (gui / f"{name}.bgin").write_bytes(document.encode())
 
 
-def verify_prepared(folder):
+def verify_prepared(folder, versions=(PACKAGE_VERSION,)):
     identity = ElementTree.parse(folder / "AppxManifest.xml").getroot().find("{*}Identity")
-    if identity is None or identity.get("Name") != PACKAGE_NAME or identity.get("Version") != "4.8.0.9":
+    if identity is None or identity.get("Name") != PACKAGE_NAME or identity.get("Version") not in versions:
         raise ValueError("The selected folder is not a prepared 4.8.0.7 installation.")
-    if (not (folder / LAUNCHER).is_file() or
-        (folder / BUILD_LOCK).read_text(encoding="ascii").strip() != sha256(folder / "Asphalt8.exe")):
+    if (folder / BUILD_LOCK).read_text(encoding="ascii").strip() != sha256(folder / "Asphalt8.exe"):
         raise ValueError("The prepared game executable does not match its installation checksum.")
+
+
+def update_branding(folder):
+    verify_prepared(folder, ("4.8.0.9", PACKAGE_VERSION))
+    manifest = folder / "AppxManifest.xml"
+    current = manifest.read_text(encoding="utf-8")
+    branded = brand_manifest(current)
+    if current != branded or not (folder / LAUNCHER).is_file():
+        shutil.copy2(PAYLOAD, folder / LAUNCHER)
+    if current != branded:
+        manifest.write_text(branded, encoding="utf-8", newline="\n")
 
 
 def prepare(source, target):
@@ -124,8 +134,11 @@ def prepare(source, target):
 
 def register(target):
     verify_prepared(target)
+    if not (target / LAUNCHER).is_file():
+        raise ValueError("The Prime Remake launcher is missing. Run setup again to repair it.")
     power_shell = Path(os.environ["SystemRoot"]) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    env = dict(os.environ, ASPHALT_OFFLINE_SETUP_DESTINATION=str(target.resolve()))
+    env = dict(os.environ, ASPHALT_OFFLINE_SETUP_DESTINATION=str(target.resolve()),
+               ASPHALT_OFFLINE_SETUP_VERSION=PACKAGE_VERSION)
     result = subprocess.run([str(power_shell), "-NoProfile", "-NonInteractive", "-Command", REGISTRATION],
                             env=env, capture_output=True, text=True, errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW)
@@ -139,14 +152,14 @@ def show_setup():
     from tkinter import filedialog, messagebox, ttk
 
     window = tk.Tk()
-    window.title("Asphalt 8 Offline Lab Setup")
+    window.title(f"{PROJECT_NAME} Setup")
     window.geometry("570x270")
     window.resizable(False, False)
     source = tk.StringVar()
     status = tk.StringVar(value="Choose your Windows 4.8.0.7 package or extracted game files.")
     frame = ttk.Frame(window, padding=22)
     frame.pack(fill="both", expand=True)
-    ttk.Label(frame, text="Asphalt 8 Offline Lab Setup", font=("Segoe UI", 17)).pack(anchor="w")
+    ttk.Label(frame, text=f"{PROJECT_NAME} Setup", font=("Segoe UI", 17)).pack(anchor="w")
     ttk.Label(frame, textvariable=status, wraplength=520).pack(anchor="w", pady=10)
     ttk.Entry(frame, textvariable=source, state="readonly").pack(fill="x")
     choices = ttk.Frame(frame)
@@ -196,7 +209,7 @@ def show_setup():
         parent = filedialog.askdirectory(title="Choose where to create the offline installation")
         if not parent:
             return
-        target = Path(parent) / "Asphalt 8 Offline Lab"
+        target = Path(parent) / PROJECT_NAME
         start(selected, target)
 
     def start(selected, target):
@@ -209,9 +222,18 @@ def show_setup():
 
         def work():
             try:
-                if selected != target:
+                if selected == target:
+                    update_branding(target)
+                else:
                     prepare(selected, target)
                 register(target)
+                legacy = target / LEGACY_LAUNCHER
+                backup = target / "_offline_patch_backup" / LEGACY_LAUNCHER
+                if selected == target and legacy.is_file() and not backup.exists():
+                    try:
+                        legacy.rename(backup)
+                    except OSError:
+                        pass
             except (OSError, ValueError) as error:
                 window.after(0, finished, error, target)
             except Exception as error:

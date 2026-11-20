@@ -7,8 +7,8 @@ resource files, or generated full resources belong in the repository.
 Python 3.8+ is required. No third-party dependencies are needed.
 
 ```powershell
-python tools/native-ui/test_bgin.py --gui 'D:\Asphalt 8 Airborne 4.8.0 Offline\Data\gui' -v
-python tools/native-ui/build_native_ui.py --gui 'D:\Asphalt 8 Airborne 4.8.0 Offline\Data\gui' --output 'C:\Asphalt8Build\native-ui-generated'
+python tools/native-ui/test_bgin.py --gui 'D:\Asphalt 8 Prime Remake\Data\gui' -v
+python tools/native-ui/build_native_ui.py --gui 'D:\Asphalt 8 Prime Remake\Data\gui' --output 'C:\Asphalt8Build\native-ui-generated'
 ```
 
 The builder refuses to overwrite its installed input. It creates
@@ -174,8 +174,8 @@ when existing factory caches retain the previous resource.
 Build locally from the user's installed assets with either command:
 
 ```powershell
-python tools/native-ui/build_native_ui.py --gui 'D:\Asphalt 8 Airborne 4.8.0 Offline\Data\gui' --output "$env:TEMP\asphalt-native-ui" --panel-only
-python tools/native-ui/build_native_ui.py --gui 'D:\Asphalt 8 Airborne 4.8.0 Offline\Data\gui' --output "$env:TEMP\asphalt-native-ui" --keyboard-only
+python tools/native-ui/build_native_ui.py --gui 'D:\Asphalt 8 Prime Remake\Data\gui' --output "$env:TEMP\asphalt-native-ui" --panel-only
+python tools/native-ui/build_native_ui.py --gui 'D:\Asphalt 8 Prime Remake\Data\gui' --output "$env:TEMP\asphalt-native-ui" --keyboard-only
 ```
 
 After closing the game, the local installer/runtime integrator can back up any
