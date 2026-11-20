@@ -72,10 +72,18 @@ internal sealed class TrainerContext : ApplicationContext
 
     internal static void LaunchGame()
     {
+        string appId = AppId;
+        string idFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app-id.txt");
+        if (File.Exists(idFile))
+        {
+            appId = File.ReadAllText(idFile).Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(appId, @"\APrimeRemake\.Asphalt8_[a-z0-9]{13}!App\z"))
+                throw new InvalidDataException("The configured Prime Remake application ID is invalid.");
+        }
         Process.Start(new ProcessStartInfo
         {
             FileName = "explorer.exe",
-            Arguments = "shell:AppsFolder\\" + AppId,
+            Arguments = "shell:AppsFolder\\" + appId,
             UseShellExecute = true
         });
     }

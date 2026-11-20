@@ -4,7 +4,9 @@
 
 `Trainer.cs` contains the WinForms launcher, tray icon, global Insert hotkey, categorized overlay, favorites and persistent tool state. The launcher activates the registered offline Windows app identity. A named mutex prevents duplicate trainer instances.
 
-The package identity is `YoanRochat.Asphalt8Airborne480Offline`. The launcher targets the application ID `YoanRochat.Asphalt8Airborne480Offline_0pp20fcewvvtj!App`. The patcher preserves the original manifest publisher because it determines the package family suffix.
+The loose-layout package identity is `YoanRochat.Asphalt8Airborne480Offline`. Its launcher targets `YoanRochat.Asphalt8Airborne480Offline_0pp20fcewvvtj!App` to retain the existing Windows save container.
+
+Fresh Windows 11 installations build `PrimeRemake.Asphalt8` from the selected local game files through the Windows App Package API. Setup installs the bundled Microsoft-signed x86 framework and the locally generated game package. It writes the actual registered application ID beside the launcher. That package family starts with a fresh Windows profile. The build preserves the original game-engine revision and generates the same native lobby resources used by the loose installer.
 
 ## Patch engine
 

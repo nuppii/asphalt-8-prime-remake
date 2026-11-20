@@ -169,3 +169,9 @@ The installed game was restarted with the staged experimental bot-race trainer. 
 A follow-up test with the corrected solo-bot eligibility check ran a Classic race on Nevada with a Dodge Dart GT for over two minutes without the **You are alone** prompt. The native TAB standings rendered while racing. The final nickname lookup and HUD placement correction passed the isolated native fixture, which also exercises the race order, transport RTT data and password admission logic with stubbed game objects. Real RTT display for two human players and direct private-room admission still need end-to-end testing across separate game clients.
 
 The Windows setup builds a pinned 4.8.0.7 engine under a separate package identity. It generates local menu resources from the supplied game files. A prior installation is optional. A compatible package or extracted source remains required. The installer fixture exercises archive extraction and preparation separately from Windows registration and game launch.
+
+## Packaged Windows 11 installer
+
+The released setup was tested in a new Windows Sandbox with software graphics. Before installation, no Asphalt package, save profile, or x86 `Microsoft.VCLibs.120.00` framework was present. Developer Mode remained disabled. Setup installed the bundled Microsoft-signed framework and locally generated AppX from the supplied 4.8.0.7 package, and created a working launcher. The game created a new profile and reached its main menu. Pressing **Insert** opened the trainer.
+
+An earlier candidate registered successfully using default Sandbox graphics but the game exited during its first launch. The passing run used the final compatibility code and software rendering. It establishes the clean-install path in that environment. Wider testing on different hardware and two-player Internet racing remain separate.

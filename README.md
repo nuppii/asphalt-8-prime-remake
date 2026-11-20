@@ -8,15 +8,15 @@ This independent project accepts your own original Windows 4.8.0.7 package or ex
 
 ## Install with one EXE
 
-1. Download **Asphalt8PrimeRemake-Setup.exe** from [Releases](https://github.com/nuppii/asphalt-8-prime-remake/releases).
+1. For a new installation, download **Asphalt8PrimeRemake-Setup.exe** from the [latest release](https://github.com/nuppii/asphalt-8-prime-remake/releases/latest).
 2. In Setup, choose your compatible Windows `.appx` or `.msix` package, or its already extracted game folder. Choose a parent folder for the new **Asphalt 8 Prime Remake** installation.
-3. Click **Install**, then open **Asphalt 8 Prime Remake.exe** in the new folder. Press **Insert** for the trainer.
+3. Click **Install** and approve the Windows administrator prompt. Open **Asphalt 8 Prime Remake.exe** in the new launcher folder and press **Insert** for the trainer.
 
-To update a copy installed with the previous setup, choose its existing folder in the new setup. The Windows package family and save data carry over.
+To update a copy installed with the previous loose-layout setup, choose its existing folder. That path uses the previous Windows package family and its save data. A new packaged installation has its own app identity and profile.
 
-Setup includes the Windows trainer and its resource builder. Windows must already permit loose package registration and have the game's x86 `Microsoft.VCLibs.120.00` dependency. The engine stays on 4.8.0.7. Setup registers a separate offline package identity from the Microsoft Store release and has no updater. Setup does not change global Store settings or firewall rules. Player-hosted multiplayer can still use the network.
+Setup generates an AppX locally using the supplied game files and installs it through Windows 11. The new installation does not need Developer Mode. Windows requires administrator approval for this unsigned local package. Setup installs the bundled, signed x86 `Microsoft.VCLibs.120.00` dependency if missing. Allow approximately 10 GB of free space during staging and installation if both use the same drive. The engine stays on 4.8.0.7. Setup has no automatic updater. [Microsoft's unsigned AppX deployment documentation](https://learn.microsoft.com/en-us/windows/msix/package/unsigned-package)
 
-The preview installer includes the Classic bot-race and TAB standings hooks. A real Classic race with bots was exercised locally. The installer build and two-human Internet racing have separate verification limits documented in [validation](docs/VALIDATION.md).
+The installer includes the Classic bot-race and TAB standings hooks. A real Classic race with bots was exercised locally. Clean installation was verified in Windows Sandbox using software rendering. See the [validation results](docs/VALIDATION.md) for test coverage.
 
 ## Screenshots
 
@@ -92,7 +92,7 @@ To reproduce the release installer, install PyInstaller in the build Python envi
 .\scripts\Build-Setup.ps1 -MsvcBin '<your x86 MSVC compiler directory>'
 ```
 
-The executable goes to `build/release`. The build does not read or embed a game package. The independent developer installer below also supports building and patching an extracted copy directly.
+The build downloads and verifies the unmodified Microsoft framework package. Pass `-RuntimeAppx '<path to the signed x86 framework AppX>'` to supply an existing copy. The executable goes to `build/release` by default. The build does not read or embed a game package. The independent developer installer below uses loose registration and can build and patch an extracted copy directly. [Microsoft's framework redistribution information](https://learn.microsoft.com/en-us/visualstudio/productinfo/2015-redistribution-vs)
 
 1. Copy your complete compatible game into a dedicated directory. Keep your original installation and a backup of your local save.
 2. Clone this repository and open PowerShell in its root.

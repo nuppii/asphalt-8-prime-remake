@@ -12,12 +12,14 @@ from zipfile import BadZipFile, ZipFile
 
 from bgin import Document
 from build_native_ui import build_keyboard_document, build_panel_document, build_roster_document
+from deploy_appx import RUNTIME_FILE, install_clean
 from patch_offline import PACKAGE_NAME, PACKAGE_VERSION, PROJECT_NAME, brand_manifest, patch_game, sha256
 
 
 LAUNCHER = f"{PROJECT_NAME}.exe"
 LEGACY_LAUNCHER = "Asphalt 8 Airborne 4.8.exe"
 PAYLOAD = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "offline-launcher.exe"
+RUNTIME_PAYLOAD = PAYLOAD.with_name(RUNTIME_FILE)
 BUILD_LOCK = "offline-build.sha256"
 REGISTRATION = r"""
 $ErrorActionPreference = 'Stop'
@@ -153,9 +155,10 @@ def show_setup():
 
     window = tk.Tk()
     window.title(f"{PROJECT_NAME} Setup")
-    window.geometry("570x270")
+    window.geometry("605x310")
     window.resizable(False, False)
     source = tk.StringVar()
+    runtime = tk.StringVar()
     status = tk.StringVar(value="Choose your Windows 4.8.0.7 package or extracted game files.")
     frame = ttk.Frame(window, padding=22)
     frame.pack(fill="both", expand=True)
@@ -175,6 +178,15 @@ def show_setup():
     folder_button = ttk.Button(choices, text="Choose a game folder", command=lambda: choose(False))
     package_button.pack(side="left")
     folder_button.pack(side="left", padx=8)
+    def choose_runtime():
+        selected = filedialog.askopenfilename(title="Choose the Microsoft VCLibs 120 x86 package",
+                                               filetypes=[("Windows package", "*.appx *.msix")])
+        if selected:
+            runtime.set(selected)
+            status.set(f"Runtime selected: {Path(selected).name}")
+
+    runtime_button = ttk.Button(choices, text="Choose runtime", command=choose_runtime)
+    runtime_button.pack(side="left")
     progress = ttk.Progressbar(frame, mode="indeterminate")
     progress.pack(fill="x", pady=5)
     installing = False
@@ -189,7 +201,7 @@ def show_setup():
         nonlocal installing
         installing = False
         progress.stop()
-        for button in (package_button, folder_button, install_button):
+        for button in (package_button, folder_button, runtime_button, install_button):
             button.configure(state="normal")
         status.set("Installation stopped." if error else f"Installed in {target}.")
         if error:
@@ -215,7 +227,8 @@ def show_setup():
     def start(selected, target):
         nonlocal installing
         installing = True
-        for button in (package_button, folder_button, install_button):
+        selected_runtime = Path(runtime.get()) if runtime.get() else None
+        for button in (package_button, folder_button, runtime_button, install_button):
             button.configure(state="disabled")
         status.set("Preparing and registering the offline copy. This can take a few minutes.")
         progress.start(10)
@@ -224,16 +237,16 @@ def show_setup():
             try:
                 if selected == target:
                     update_branding(target)
+                    register(target)
+                    legacy = target / LEGACY_LAUNCHER
+                    backup = target / "_offline_patch_backup" / LEGACY_LAUNCHER
+                    if legacy.is_file() and not backup.exists():
+                        try:
+                            legacy.rename(backup)
+                        except OSError:
+                            pass
                 else:
-                    prepare(selected, target)
-                register(target)
-                legacy = target / LEGACY_LAUNCHER
-                backup = target / "_offline_patch_backup" / LEGACY_LAUNCHER
-                if selected == target and legacy.is_file() and not backup.exists():
-                    try:
-                        legacy.rename(backup)
-                    except OSError:
-                        pass
+                    install_clean(selected, target, prepare, LAUNCHER, find_runtime(selected, selected_runtime))
             except (OSError, ValueError) as error:
                 window.after(0, finished, error, target)
             except Exception as error:
@@ -248,20 +261,34 @@ def show_setup():
     window.mainloop()
 
 
+def find_runtime(source, specified):
+    if specified:
+        return specified.resolve()
+    folders = [source if source.is_dir() else source.parent, source.parent]
+    return next((path.resolve() for path in [RUNTIME_PAYLOAD, *(folder / RUNTIME_FILE for folder in folders)]
+                 if path.is_file()), None)
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         show_setup()
     else:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("--prepare-only", nargs=2, type=Path, metavar=("SOURCE", "DESTINATION"))
+        modes = parser.add_mutually_exclusive_group(required=True)
+        modes.add_argument("--prepare-only", nargs=2, type=Path, metavar=("SOURCE", "DESTINATION"))
+        modes.add_argument("--install-clean", nargs=2, type=Path, metavar=("SOURCE", "DESTINATION"))
+        parser.add_argument("--runtime", type=Path, help="Supply the signed Microsoft VCLibs 120 x86 package.")
         parser.add_argument("--error-log", type=Path, help="Write a preparation error to this file.")
         args = parser.parse_args()
-        if args.prepare_only:
-            try:
+        try:
+            if args.prepare_only:
                 prepare(*args.prepare_only)
-            except (OSError, ValueError, BadZipFile, ElementTree.ParseError) as error:
-                if args.error_log:
-                    args.error_log.write_text(f"{type(error).__name__}: {error}\n", encoding="utf-8")
-                if sys.stderr is not None:
-                    print(error, file=sys.stderr)
-                sys.exit(1)
+            else:
+                source, target = args.install_clean
+                install_clean(source, target, prepare, LAUNCHER, find_runtime(source, args.runtime))
+        except (OSError, ValueError, BadZipFile, ElementTree.ParseError) as error:
+            if args.error_log:
+                args.error_log.write_text(f"{type(error).__name__}: {error}\n", encoding="utf-8")
+            if sys.stderr is not None:
+                print(error, file=sys.stderr)
+            sys.exit(1)
