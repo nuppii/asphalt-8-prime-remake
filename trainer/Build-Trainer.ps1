@@ -29,16 +29,19 @@ try {
     $policyObject = Join-Path $stage 'NativeLobbyPolicy.obj'
     & (Join-Path $MsvcBin 'cl.exe') /nologo /c /O2 /GS- /arch:IA32 "/Fo$policyObject" (Join-Path $PSScriptRoot 'NativeLobbyPolicy.c')
     if ($LASTEXITCODE -ne 0) { throw 'Native lobby policy compilation failed.' }
-    & (Join-Path $MsvcBin 'link.exe') /NOLOGO /NODEFAULTLIB /MACHINE:X86 /SUBSYSTEM:CONSOLE /ENTRY:TickUi /FIXED:NO "/OUT:$lobbyImage" $lobbyObject $lanObject $policyObject
+    $transportObject = Join-Path $stage 'NativeLobbyTransport.obj'
+    & (Join-Path $MsvcBin 'cl.exe') /nologo /c /O2 /GS- /arch:IA32 "/Fo$transportObject" (Join-Path $PSScriptRoot 'NativeLobbyTransport.c')
+    if ($LASTEXITCODE -ne 0) { throw 'Native lobby transport compilation failed.' }
+    & (Join-Path $MsvcBin 'link.exe') /NOLOGO /NODEFAULTLIB /MACHINE:X86 /SUBSYSTEM:CONSOLE /ENTRY:TickUi /FIXED:NO "/OUT:$lobbyImage" $lobbyObject $lanObject $policyObject $transportObject
     if ($LASTEXITCODE -ne 0) { throw 'Native lobby linking failed.' }
-    $sources = @('Trainer.cs', 'CheatTableForm.cs', 'GridSpawnHook.cs', 'MutatorEngine.cs', 'NativeMultiplayer.cs', 'NativeLobbyHook.cs', 'NativeLobbyBridge.cs') | ForEach-Object { Join-Path $PSScriptRoot $_ }
+    $sources = @('Trainer.cs', 'CheatTableForm.cs', 'GridSpawnHook.cs', 'MutatorEngine.cs', 'NativeMultiplayer.cs', 'NativeLobbyHook.cs', 'NativeLobbyBridge.cs','NativeNetworkState.cs') | ForEach-Object { Join-Path $PSScriptRoot $_ }
     $sources += @('RoomProtocol.cs','RoomServer.cs','RoomClient.cs','LanRoomDiscovery.cs','PublicRoomDirectory.cs','RoomInvites.cs','SocialClient.cs') | ForEach-Object { Join-Path (Join-Path $PSScriptRoot '..\multiplayer') $_ }
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
     & $compiler /nologo /target:winexe /platform:x86 /optimize+ "/out:$Output" "/resource:$image,GridSpawn.x86" "/resource:$mutatorImage,MutatorPhysics.x86" "/resource:$lobbyImage,NativeLobbyUi.x86" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Security.dll /reference:System.Runtime.Serialization.dll $sources
     if ($LASTEXITCODE -ne 0) { throw 'Trainer compilation failed.' }
 }
 finally {
-    foreach ($name in 'GridSpawn.obj', 'GridSpawn.bin', 'MutatorPhysics.obj', 'MutatorPhysics.bin', 'NativeLobbyUi.obj', 'NativeLanBridge.obj', 'NativeLobbyPolicy.obj', 'NativeLobbyUi.bin', 'NativeLobbyUi.lib', 'NativeLobbyUi.exp') {
+    foreach ($name in 'GridSpawn.obj', 'GridSpawn.bin', 'MutatorPhysics.obj', 'MutatorPhysics.bin', 'NativeLobbyUi.obj', 'NativeLanBridge.obj', 'NativeLobbyPolicy.obj','NativeLobbyTransport.obj', 'NativeLobbyUi.bin', 'NativeLobbyUi.lib', 'NativeLobbyUi.exp') {
         $file = Join-Path $stage $name
         if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
     }

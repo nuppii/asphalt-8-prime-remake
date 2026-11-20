@@ -5,6 +5,8 @@
 #include "NativeLobbyUi.h"
 #include "NativeLanBridge.h"
 #include "NativeLobbyPolicy.h"
+#include "NativeLobbyTransport.h"
+#include "NativeNetworkState.h"
 
 typedef unsigned U32;
 typedef struct Pair { void *ptr; void *control; } Pair;
@@ -353,7 +355,7 @@ static void Refresh(void) {
         if(c->action==A_SELECT_ROOM || c->action==A_SELECT_FRIEND){U32 count=c->action==A_SELECT_ROOM?gState->roomCount:gState->friendCount;U32 selected=c->action==A_SELECT_ROOM?gState->selectedRoom:gState->selectedFriend;NativeUiEntry *entries=c->action==A_SELECT_ROOM?gState->rooms:gState->friends;
             Visible(c->visual.ptr,c->page==page && c->attached);
             if(c->value<count && c->value<8){Copy(text,selected==c->value?"> ":"",sizeof(text));Append(text,entries[c->value].label,sizeof(text));Label(c,text);}continue;}
-        if(c->action==A_JOIN_ROOM)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY) && gState->selectedRoom<gState->roomCount && gState->selectedRoom<8);
+        if(c->action==A_JOIN_ROOM){U32 phase=NativeNetwork(gState)->joinPhase;Enabled(c->button.ptr,(phase<NJ_QUEUED||phase>NJ_DISPATCHED)&&gState->statusCode!=307&&(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY) && gState->selectedRoom<gState->roomCount && gState->selectedRoom<8 && (NativeNetwork(gState)->joinableMask&(1U<<gState->selectedRoom)));}
         if(c->action==A_DIRECT_JOIN)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_DIRECT_QUERY)!=0);
         if(c->action==A_ROOM_LIST)Enabled(c->button.ptr,gState->roomCount>0 && gState->statusCode!=300);
         if(c->action==A_INVITE_FRIEND)Enabled(c->button.ptr,(gState->bridgeFlags&NUI_BRIDGE_FRIENDS) && gState->selectedFriend<gState->friendCount && gState->selectedFriend<8);
@@ -368,7 +370,7 @@ static void Refresh(void) {
                 else {Number(num,gState->roomCount);Append(text,num,sizeof(text));Append(text," ROOMS - SELECT A GAME",sizeof(text));}
             }else Copy(text,gState->statusCode==302?"ROOMS: NO MATCHES":gState->statusCode==303?"ROOMS: CONNECTION UNAVAILABLE":gState->statusCode==304?"ROOMS: SEARCH FAILED":"ROOMS: SEARCH TO LIST GAMES",sizeof(text));
         }
-        else if(c->action==A_JOIN_ROOM)Copy(text,gState->selectedRoom<gState->roomCount && !(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY)?"NATIVE JOIN UNAVAILABLE":"JOIN SELECTED ROOM",sizeof(text));
+        else if(c->action==A_JOIN_ROOM)Copy(text,gState->selectedRoom<gState->roomCount && (!(gState->bridgeFlags&NUI_BRIDGE_DISCOVERY)||gState->selectedRoom>=8||!(NativeNetwork(gState)->joinableMask&(1U<<gState->selectedRoom)))?"ROOM FULL OR NATIVE JOIN UNAVAILABLE":"JOIN SELECTED ROOM",sizeof(text));
         else if(c->action==A_TOGGLE){prefix=c->value==NUI_MUTATORS?"Mutators":c->value==NUI_CHEATS?"Cheats":c->value==NUI_OWNED_CARS?"Owned cars required":c->value==NUI_IGNORE_CLASS?"Ignore class":c->value==NUI_FILL_AI?"Fill empty slots with AI":"Private room";Copy(text,prefix,sizeof(text));Append(text,gState->policyBits&c->value?": ON":": OFF",sizeof(text));}
         else if(c->action==A_GRID || c->action==A_LAPS){U32 value=c->action==A_GRID?gState->grid:gState->laps;Copy(text,c->action==A_GRID?"Grid: ":"Laps: ",sizeof(text));if(!value)Append(text,"Default",sizeof(text));else{Number(num,value);Append(text,num,sizeof(text));}}
         else if(c->action==A_EDIT && c->value<=E_NICKNAME){prefix=c->value==E_ROOM?"Room name: ":c->value==E_QUERY?"Search: ":"Nickname: ";Copy(text,prefix,sizeof(text));Append(text,c->value==E_ROOM?gState->roomName:c->value==E_QUERY?gState->query:gState->nickname,sizeof(text));}
@@ -401,6 +403,7 @@ static void Refresh(void) {
 __declspec(dllexport) void __cdecl TickUi(U32 module,void *screen,NativeUiState *shared) {
     void *outer;U32 text;
     if(!module || !screen || !shared)return;
+    NativeTransportTick(module,screen,shared);
     NativeLanTick(module,screen,shared);
     if(NativeLobbyPolicyTick(module,screen,shared)){
         gState=shared;Request(NUI_REQUEST_POLICY,NUI_FIELD_POLICY);

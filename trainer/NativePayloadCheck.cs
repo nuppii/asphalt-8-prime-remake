@@ -111,6 +111,49 @@ internal static class NativePayloadCheck
         }finally{VirtualFree(branch,UIntPtr.Zero,0x8000);VirtualFree(module,UIntPtr.Zero,0x8000);}
     }
     static void Mov(List<byte> code,byte opcode,uint v){code.Add(opcode);Imm(code,v);}
+    static void NativeNetworkCase(Type hook,IntPtr wallet)
+    {
+        IntPtr module=Allocate(0x1e60000);
+        try{
+            IntPtr screen=Plus(module,0x1000),menu=Plus(module,0x2000),lobby=Plus(module,0x3000),room=Plus(module,0x4000),owner=Plus(module,0x5000),local=Plus(module,0x6000),transport=Plus(module,0x7000),state=Plus(wallet,0x38000),network=Plus(state,3784);
+            Clear(state,4040);Marshal.WriteInt32(state,unchecked((int)0x3849554e));Marshal.WriteInt32(state,4,1);Marshal.WriteInt32(state,8,3784);Marshal.WriteInt32(state,28,2);
+            Marshal.WriteInt32(screen,unchecked((int)(U(module)+0x1d4ac78)));Marshal.WriteInt32(screen,0x270,lobby.ToInt32());Marshal.WriteByte(screen,0x284,1);
+            Marshal.WriteInt32(lobby,unchecked((int)(U(module)+0x1d6a474)));Marshal.WriteInt32(lobby,8,local.ToInt32());Marshal.WriteInt32(room,unchecked((int)(U(module)+0x1d6a510)));Marshal.WriteInt32(room,0x58,owner.ToInt32());Marshal.WriteInt32(room,0x5c,8);Marshal.WriteInt16(room,0x78,unchecked((short)49001));Marshal.WriteInt32(room,0x50,0x55667788);Marshal.WriteInt32(room,0x54,0x11223344);
+            foreach(var user in new[]{owner,local}){Marshal.WriteInt32(user,unchecked((int)(U(module)+0x1d6a568)));Marshal.WriteInt32(user,0xe8,1);}
+            var getRoom=new List<byte>();Mov(getRoom,0xb8,U(room));getRoom.Add(0xc3);Put(Plus(module,0x8000),getRoom.ToArray());Marshal.WriteInt32(Plus(module,0x1d6a474+0x44),Plus(module,0x8000).ToInt32());
+            Put(Plus(module,0x8100),0x8d,0x41,0x1c,0xc3);Marshal.WriteInt32(Plus(module,0x1d6a510+8),Plus(module,0x8100).ToInt32());
+            Put(Plus(room,0x1c),System.Text.Encoding.ASCII.GetBytes("Native fixture\0"));Marshal.WriteInt32(room,0x1c+16,14);Marshal.WriteInt32(room,0x1c+20,15);
+            Tick tick=(Tick)Marshal.GetDelegateForFunctionPointer(Plus(wallet,0x2000+Export(hook,"TickUi")),typeof(Tick));tick(U(module),screen,state);
+            Check(Marshal.ReadInt32(network)==unchecked((int)0x38544e4e)&&Marshal.ReadInt32(network,8)==256,"network extension initialized independently");
+            Check(Marshal.ReadInt32(network,16)==1&&Marshal.ReadInt32(network,36)==1&&Marshal.ReadInt32(network,40)==8&&Marshal.ReadInt32(network,28)==49001,"actual host observation fields");
+            Check(Marshal.ReadInt32(network,12)==Marshal.ReadInt32(network,232)&&(Marshal.ReadInt32(network,12)&1)==0,"host observation seqlock committed");
+            Check(System.Text.Encoding.ASCII.GetString(Snapshot(Plus(network,48),64)).StartsWith("Native fixture"),"display name getter uses virtual+8");
+            Marshal.WriteInt32(state,32,32);tick(U(module),screen,state);Check(Marshal.ReadInt32(network,44)==1,"private requested policy published");
+            Marshal.WriteInt16(room,0x78,0);tick(U(module),screen,state);Check(Marshal.ReadInt32(network,16)==0,"invalid host port fails closed");Marshal.WriteInt16(room,0x78,unchecked((short)49001));
+            Marshal.WriteByte(screen,0x284,0);Marshal.WriteInt32(local,0xe8,2);Marshal.WriteInt32(lobby,0x10,5);Marshal.WriteByte(lobby,0x2d,1);Marshal.WriteInt32(lobby,0x70,transport.ToInt32());Marshal.WriteInt32(transport,unchecked((int)(U(module)+0x1d6a364)));Put(Plus(module,0x8200),0x33,0xc0,0xc3);Marshal.WriteInt32(Plus(module,0x1d6a364+0x10),Plus(module,0x8200).ToInt32());
+            tick(U(module),screen,state);Check(Marshal.ReadInt32(network,112)==1&&Marshal.ReadInt32(network,116)==0x55667788&&Marshal.ReadInt32(network,120)==0x11223344,"accepted live client observation");
+            Marshal.WriteByte(lobby,0x2d,0);tick(U(module),screen,state);Check(Marshal.ReadInt32(network,112)==0,"client navigation without acknowledgement is not connected");Marshal.WriteByte(lobby,0x2d,1);
+            // Wire the original browser callback and a Finder/row to owned stubs.
+            IntPtr finder=Plus(module,0x9000),discoverer=Plus(module,0xa000),button=Plus(module,0xb000),control=Plus(module,0xb100),row=Plus(module,0xc000),vector=Plus(module,0xd000),rowVector=Plus(module,0xd100),joins=Plus(module,0xd200);
+            Marshal.WriteInt32(menu,unchecked((int)(U(module)+0x1d45bac)));Marshal.WriteInt32(menu,0x26c,button.ToInt32());Marshal.WriteInt32(menu,0x270,control.ToInt32());Marshal.WriteInt32(control,4,1);Put(Plus(module,0x9c76e0),0x8b,0x44,0x24,0x08,0xff,0x48,0x04,0xc2,0x08,0x00);
+            Marshal.WriteInt32(finder,Plus(module,0xe000).ToInt32());Marshal.WriteInt32(finder,4,discoverer.ToInt32());Marshal.WriteInt32(discoverer,unchecked((int)(U(module)+0x1d69be0)));Marshal.WriteInt32(Plus(module,0x1d69be0+0x18),Plus(module,0x8300).ToInt32());Put(Plus(module,0x8300),0xc2,0x04,0x00);
+            var enumerate=new List<byte>(new byte[]{0x8b,0x44,0x24,0x04,0xc7,0x00});Imm(enumerate,U(vector));enumerate.AddRange(new byte[]{0xc7,0x40,0x04});Imm(enumerate,U(vector)+4);enumerate.AddRange(new byte[]{0xc7,0x40,0x08});Imm(enumerate,U(vector)+4);enumerate.AddRange(new byte[]{0xc2,0x04,0x00});Put(Plus(module,0x8400),enumerate.ToArray());Marshal.WriteInt32(Plus(module,0xe000+8),Plus(module,0x8400).ToInt32());Marshal.WriteInt32(vector,room.ToInt32());Put(Plus(module,0xeaa00),0xc3);
+            Put(Plus(module,0x8500),0x33,0xc0,0xc3);Marshal.WriteInt32(Plus(module,0x1d6a510+0x20),Plus(module,0x8500).ToInt32());
+            Marshal.WriteInt32(Plus(module,0x1e5147c),screen.ToInt32());Marshal.WriteInt32(screen,0x264,finder.ToInt32());Marshal.WriteInt32(screen,0x278,rowVector.ToInt32());Marshal.WriteInt32(screen,0x27c,Plus(rowVector,4).ToInt32());Marshal.WriteInt32(rowVector,row.ToInt32());Marshal.WriteInt32(row,0x64,screen.ToInt32());Marshal.WriteInt32(row,0x68,room.ToInt32());Marshal.WriteInt32(row,0x44,button.ToInt32());Marshal.WriteInt32(row,0x48,control.ToInt32());Marshal.WriteInt32(button,0x14,room.ToInt32());Marshal.WriteInt16(room,0x80,2);Marshal.WriteInt32(room,0x84,0x077100cb);
+            var join=new List<byte>(new byte[]{0xff,0x05});Imm(join,U(joins));join.AddRange(new byte[]{0x8b,0x44,0x24,0x08,0xff,0x48,0x04,0xc2,0x08,0x00});Put(Plus(module,0xaf03e0),join.ToArray());
+            Marshal.WriteInt32(network,128,1);Marshal.WriteInt32(network,136,1);Marshal.WriteInt32(network,140,0x55667788);Marshal.WriteInt32(network,144,0x11223344);Marshal.WriteInt32(network,236,49001);Put(Plus(network,148),System.Text.Encoding.ASCII.GetBytes("203.0.113.7\0"));
+            tick(U(module),menu,state);Check(Marshal.ReadInt32(network,132)==1&&Marshal.ReadInt32(network,136)==2,"queued native join acknowledged as discovery only");
+            Marshal.WriteInt32(screen,unchecked((int)(U(module)+0x1d4db14)));Marshal.WriteInt32(room,0x84,0x087100cb);
+            for(int i=0;i<15;i++)tick(U(module),screen,state);Check(Marshal.ReadInt32(joins)==0&&Marshal.ReadInt32(network,136)==2,"wrong observed IPv4 is never autojoined");Marshal.WriteInt32(room,0x84,0x077100cb);Marshal.WriteInt16(room,0x78,unchecked((short)49002));
+            for(int i=0;i<15;i++)tick(U(module),screen,state);Check(Marshal.ReadInt32(joins)==0&&Marshal.ReadInt32(network,136)==2,"wrong lobby port is never autojoined");Marshal.WriteInt16(room,0x78,unchecked((short)49001));Marshal.WriteInt32(room,0x54,0x11223345);
+            for(int i=0;i<15;i++)tick(U(module),screen,state);Check(Marshal.ReadInt32(joins)==0&&Marshal.ReadInt32(network,136)==2,"wrong native room ID is never autojoined");
+            Marshal.WriteInt32(room,0x54,0x11223344);for(int i=0;i<15;i++)tick(U(module),screen,state);Check(Marshal.ReadInt32(joins)==1&&Marshal.ReadInt32(network,136)==3,"matching native row dispatches original join without claiming connection");
+            Marshal.WriteInt32(screen,unchecked((int)(U(module)+0x1d4ac78)));Marshal.WriteByte(lobby,0x2d,0);tick(U(module),screen,state);Check(Marshal.ReadInt32(network,136)==3,"navigation alone cannot confirm a queued join");
+            Marshal.WriteByte(lobby,0x2d,1);Marshal.WriteInt32(room,0x54,0x11223345);tick(U(module),screen,state);Check(Marshal.ReadInt32(network,136)==3,"a different accepted lobby cannot confirm the target");
+            Marshal.WriteInt32(room,0x54,0x11223344);tick(U(module),screen,state);Check(Marshal.ReadInt32(network,136)==4&&Marshal.ReadInt32(state,48)==212,"only matching accepted live lobby confirms the join");
+            Console.WriteLine("PASS isolated host observation and queued directory join: identity/endpoint filtering, real-row callback contract and accepted-client confirmation. Original APIs are stubbed; no game peers joined.");
+        }finally{VirtualFree(module,UIntPtr.Zero,0x8000);}
+    }
     static void Store(List<byte> code,byte modrm,uint address){code.Add(0x89);code.Add(modrm);Imm(code,address);}
     static void LapCase(Func<long,long,byte[]> build,IntPtr mem,int laps,int mode,int privateRoom,int initial,int expected) {
         IntPtr state=Plus(mem,0x2000),server=Plus(mem,0x3000),scratch=Plus(mem,0x4000),observed=Plus(mem,0x5000);Clear(state,3784);Clear(server,0x200);Clear(scratch,0x80);Clear(observed,32);
@@ -130,7 +173,7 @@ internal static class NativePayloadCheck
     public static int Main(string[] args) {
         IntPtr wallet=IntPtr.Zero,lap=IntPtr.Zero;FieldInfo stateField=null;long saved=0;
         try { Check(IntPtr.Size==4,"fixture must run x86");Check(args.Length==1&&File.Exists(args[0]),"explicit trainer assembly path required");Assembly a=Assembly.LoadFrom(Path.GetFullPath(args[0]));Type catalog=a.GetType("InjectionCatalog",true),hook=a.GetType("NativeLobbyHook",true);stateField=hook.GetField("StateAddress",Any);saved=(long)stateField.GetValue(null);
-            wallet=Allocate(0x40000);Wallet(a,catalog,hook,wallet);DirectCase(catalog,hook,wallet);lap=Allocate(0x6000);stateField.SetValue(null,(long)U(lap)+0x2000);object hack=catalog.GetField("NativeClassicLaps",Any).GetValue(null);Func<long,long,byte[]> build=Builder(hack);
+            wallet=Allocate(0x40000);Wallet(a,catalog,hook,wallet);DirectCase(catalog,hook,wallet);NativeNetworkCase(hook,wallet);lap=Allocate(0x6000);stateField.SetValue(null,(long)U(lap)+0x2000);object hack=catalog.GetField("NativeClassicLaps",Any).GetValue(null);Func<long,long,byte[]> build=Builder(hack);
             LapCase(build,lap,0,0,1,2,2);LapCase(build,lap,1,0,1,2,1);LapCase(build,lap,60,0,1,2,60);LapCase(build,lap,61,0,1,2,2);LapCase(build,lap,-1,0,1,2,2);LapCase(build,lap,3,1,1,2,2);LapCase(build,lap,3,0,0,2,2);LapCase(build,lap,0,0,1,7,7);
             Console.WriteLine("PASS isolated native lap execution: default, 1, 60, invalid range, mode/private gates, original register/tail effects.");Console.WriteLine("PASS "+checks+" assertions. This does not validate the game UI, network peers, or races.");return 0;
         } catch(Exception e){Console.Error.WriteLine("FAIL "+e);return 1;}

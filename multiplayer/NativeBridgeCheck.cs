@@ -7,8 +7,9 @@ using OfflineLab.Multiplayer;
 
 internal static class NativeInjectionEngine
 {
-    internal static bool NativeDirectDiscoveryReady(int pid){return false;}
-    internal static byte[] State=new byte[3784];internal static int Pid=111;
+    internal static bool DirectReady;
+    internal static bool NativeDirectDiscoveryReady(int pid){return DirectReady;}
+    internal static byte[] State=new byte[NativeNetworkState.BufferBytes];internal static int Pid=111;
     internal static bool ReadNativeLobbyState(out int pid,out byte[] state){pid=Pid;state=(byte[])State.Clone();return true;}
     internal static void WriteNativeLobbyState(int pid,int offset,byte[] data){if(pid!=Pid)throw new Exception("Stale process write.");Buffer.BlockCopy(data,0,State,offset,data.Length);}
     internal static bool QueueDriverName(string name,out string error){error=null;return true;}
@@ -94,6 +95,35 @@ internal static class NativeBridgeCheck
                 Check(Text(52,160)=="Room list status stays visible."&&Word(48)==301,"Background social failure overwrote the room-search status.");
                 Text(436,1024,"");Request(again,10);
             }
+            // Simulated native extension, real HTTP directory. No native game is joined.
+            NativeInjectionEngine.Pid=444;NativeInjectionEngine.DirectReady=true;
+            Word(NativeNetworkState.Offset,unchecked((int)NativeNetworkState.Magic));Word(NativeNetworkState.Offset+4,1);Word(NativeNetworkState.Offset+8,NativeNetworkState.Bytes);
+            using(var native=new NativeLobbyBridge(folder,false))
+            {
+                Tick(native);Text(436,1024,args[0]);Request(native,10);Await(native,()=>(Word(44)&4)!=0);
+                string nativeName="Native join "+Guid.NewGuid().ToString("N");
+                var listing=new LanRoomListing{RoomId=Guid.NewGuid().ToString("N"),Name=nativeName,Address="127.0.0.1",Port=49001,Players=1,Capacity=8,Transport=RoomTransports.Asphalt480Udp,NativeRoomId="1122334455667788",DiscoveryPort=6529};
+                using(var advertisement=new PublicRoomAdvertiser(new Uri(args[0]),()=>listing))
+                {
+                    Await(native,()=>PublicRoomDirectory.Search(new Uri(args[0]),nativeName).Count==1);
+                    Text(308,64,nativeName);Request(native,2);Await(native,()=>Word(48)==301);
+                    Check(Word(NativeNetworkState.JoinableMask)==1&&(Word(44)&2)!=0,"Available native listing was not marked joinable.");
+                    Word(1464,0);Request(native,7);Await(native,()=>Word(NativeNetworkState.JoinSeq)==1);
+                    Check(Word(NativeNetworkState.JoinAck)==0&&Word(NativeNetworkState.JoinPhase)==1&&Text(NativeNetworkState.JoinAddress,16)=="127.0.0.1"&&Word(NativeNetworkState.JoinLobbyPort)==49001,"Native join payload or queued state is wrong.");
+                    Check(Word(NativeNetworkState.JoinIdLow)==0x55667788&&Word(NativeNetworkState.JoinIdHigh)==0x11223344,"Directory native ID changed byte order.");
+                    Request(native,7);Check(Word(NativeNetworkState.JoinSeq)==1&&Text(52,160).Contains("already in progress"),"Repeated join replaced an active native attempt.");
+                    Word(NativeNetworkState.JoinAck,1);Word(NativeNetworkState.JoinPhase,5);
+                }
+                Request(native,7);Await(native,()=>Word(48)==308);Check(Word(NativeNetworkState.JoinSeq)==1,"Expired lease was queued into the game.");
+                Word(NativeNetworkState.HostRevision,2);Word(NativeNetworkState.HostEndRevision,2);Word(NativeNetworkState.HostAlive,1);Word(NativeNetworkState.HostIdLow,0x55667788);Word(NativeNetworkState.HostIdHigh,0x11223344);Word(NativeNetworkState.HostLobbyPort,49002);Word(NativeNetworkState.HostDiscoveryPort,6529);Word(NativeNetworkState.HostPlayers,2);Word(NativeNetworkState.HostCapacity,8);Word(NativeNetworkState.HostPrivate,0);Text(NativeNetworkState.HostName,64,"Native publication fixture");
+                Tick(native);Await(native,()=>PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture").Count==1);
+                var host=PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture")[0];Check(host.IsNative&&host.NativeRoomId=="1122334455667788"&&host.Port==49002&&host.Players==2&&host.RoomId!=host.NativeRoomId,"Native host observation was not published with separate directory identity.");
+                Word(NativeNetworkState.HostRevision,3);Word(NativeNetworkState.HostEndRevision,3);Word(NativeNetworkState.HostAlive,0);Tick(native);Thread.Sleep(100);
+                Check(PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture").Count==1,"In-progress native observation withdrew a live advertisement.");
+                Word(NativeNetworkState.HostRevision,4);Word(NativeNetworkState.HostEndRevision,4);Word(NativeNetworkState.HostAlive,1);Word(NativeNetworkState.HostPrivate,1);Tick(native);Await(native,()=>PublicRoomDirectory.Search(new Uri(args[0]),"Native publication fixture").Count==0);
+                Word(NativeNetworkState.HostAlive,0);Text(436,1024,"");Request(native,10);
+            }
+            NativeInjectionEngine.DirectReady=false;
             File.WriteAllText(Path.Combine(folder,"native-profile.json"),"{\"Policy\":20,\"Grid\":0,\"Laps\":0,\"RoomName\":\"Test\",\"Nickname\":\"Driver\",\"DirectoryUrl\":\"https://[broken\"}");
             using(var malformed=new NativeLobbyBridge(folder,false)){Tick(malformed);Check(Text(436,1024)=="","Malformed persisted URL was not reset safely.");}
             Console.WriteLine("PASS: native bridge social HTTP operations, invitation resolve-only, protected identity persistence, PID changes and disposal.");return 0;

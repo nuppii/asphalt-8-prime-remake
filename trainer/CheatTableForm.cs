@@ -1472,9 +1472,9 @@ internal static class NativeInjectionEngine
         IntPtr process=OpenProcess(ProcessVmRead,false,pid);if(process==IntPtr.Zero)return false;
         try
         {
-            var data=new byte[3784];IntPtr count;
+            var data=new byte[NativeNetworkState.BufferBytes];IntPtr count;
             if(!ReadProcessMemory(process,IntPtr.Add(cave,NativeLobbyHook.StateOffset),data,data.Length,out count) || count.ToInt32()!=data.Length)return false;
-            if(BitConverter.ToUInt32(data,0)!=0x3849554e || BitConverter.ToUInt32(data,4)!=1 || BitConverter.ToInt32(data,8)!=data.Length)return false;
+            if(BitConverter.ToUInt32(data,0)!=0x3849554e || BitConverter.ToUInt32(data,4)!=1 || BitConverter.ToInt32(data,8)!=NativeNetworkState.UiBytes)return false;
             state=data;return true;
         }
         finally{CloseHandle(process);}
@@ -1483,7 +1483,7 @@ internal static class NativeInjectionEngine
     internal static bool WriteNativeLobbyState(int pid,int offset,byte[] data)
     {
         IntPtr cave;
-        if(data==null || offset<16 || offset>3784-data.Length || pid!=walletProcessId || allocationProcessId!=pid || !Allocations.TryGetValue("Wallet Editor",out cave))return false;
+        if(data==null || offset<16 || offset>NativeNetworkState.BufferBytes-data.Length || pid!=walletProcessId || allocationProcessId!=pid || !Allocations.TryGetValue("Wallet Editor",out cave))return false;
         IntPtr process=OpenProcess(ProcessVmWrite|ProcessVmOperation,false,pid);if(process==IntPtr.Zero)return false;
         try{IntPtr count;return WriteProcessMemory(process,IntPtr.Add(cave,NativeLobbyHook.StateOffset+offset),data,data.Length,out count) && count.ToInt32()==data.Length;}
         finally{CloseHandle(process);}

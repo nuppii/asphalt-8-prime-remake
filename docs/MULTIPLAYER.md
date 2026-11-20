@@ -2,6 +2,8 @@
 
 The Multiplayer tile now opens Asphalt 8's original **in-game** Create Room / Join Room menu. The separate companion window has been removed from the launcher and source. Native menus, typography, garage, circuit selection and illustrations are rendered by the game itself.
 
+Native public-room publication and selected-directory joining are implemented through the original browser. **A native peer connection, synchronized race, Internet reachability and native host migration remain unverified.** Directory publication and browser navigation are separate evidence from an accepted connection.
+
 Additional native pages provide **Room Options**, **Find by Name**, **Friends**, **Connection** and keyboard entry. Room names and requested policies persist locally. Grid and laps use **Default** or **1–60**; Default requests the original event value. A saved setting or visible toggle does not establish native race enforcement.
 
 ![Native in-game multiplayer controls](images/multiplayer-native-controls.jpg)
@@ -38,9 +40,10 @@ A temporary single-human launch experiment reached NetworkManager/NetworkServer 
 | Native room creation and UDP binding | Observed on the host PC |
 | Joining and racing across different PCs | Not verified |
 | Directory search by room name | Backend exact/prefix matching and duplicate choices tested; native query `A` produced the service's zero-match result |
+| Native public-room publication | Clean installed game advertised its actual room, ID and UDP ports to a local directory; leaving withdrew the lease |
 | Native LAN join by name | Original browser entry, bounded timeout and Back observed; successful room joining not verified |
 | Native direct IPv4 action | Installed native action and invalid-input handling exercised; scoped directed-discovery helper/wrapper passed an isolated x86 fixture; successful remote discovery/join not verified |
-| Room-search dropdown | Native expand/collapse, six real local room-control advertisements, four-row paging, FULL marker and retained selection exercised; directory-to-native joining remains disabled |
+| Room-search dropdown and Join Selected | Expand/collapse, paging and selection exercised; fresh native-room preflight and original-browser dispatch implemented; a nonresponding controlled fixture opened the browser without a crash, with no peer joined |
 | Connection URL and keyboard entry | Native controls implemented; saved URL restores and can be cleared |
 | Password entry and custom room policies | Native controls implemented; private native authentication and policy enforcement pending |
 | Fill with AI policy bridge | Installed build without Frida: ON populated six AI, native Remove AI removed them and saved OFF; restoring ON populated a fresh room |
@@ -67,9 +70,17 @@ The native Fill with AI bridge invokes the original button callback at preferred
 
 ## Native social bridge
 
-Find by Name now presents directory results in a collapsible native room selector. Search opens the list; selecting an entry collapses it and keeps the selection highlighted when reopened. Up to four rows are shown at once, with More Results for the second group of the existing eight-result limit. Empty/loading/unavailable/failed searches have distinct labels. New searches and confirmed query edits clear stale results and selection; late responses for an edited query are discarded. Background social checks do not overwrite the search status while this page is visible. **NATIVE JOIN UNAVAILABLE** remains disabled for selected directory results because the native directory connection adapter is not implemented.
+Find by Name presents directory results in a collapsible native room selector. Search opens the list; selecting an entry collapses it and keeps the selection highlighted when reopened. Up to four rows are shown at once, with More Results for the second group of the eight-result limit. Empty/loading/unavailable/failed searches have distinct labels. New searches and confirmed query edits clear stale results and selection; late responses for an edited query are discarded. Background social checks do not overwrite the search status while this page is visible.
+
+Listings explicitly distinguish `asphalt480-udp` native rooms from `room-control-tcp` prototype rooms. **JOIN SELECTED** is enabled only for eligible native IPv4 listings with a valid nonzero native ID, actual lobby port and available capacity. It freshly resolves the lease and checks identity and selection again before queueing the native command. TCP listings are never passed to the native join adapter, and native listings are rejected by the prototype TCP invitation resolver.
 
 ![Native room dropdown, using six owned local room-control test advertisements rather than Internet/native race sessions](images/native-room-dropdown.jpg)
+
+![Join Selected enabled for a controlled nonresponding native-format fixture; no remote peer connection is shown](images/native-directory-join.jpg)
+
+In the clean installed session on 20 November, the real host room **ASPHALT8** automatically published `1/8` humans, native ID `f968940900000001`, lobby UDP port `54551` and discovery port `6529`. Windows UDP endpoint readback confirmed both ports belonged to the game process. Leaving the room removed its advertisement. The directory was a temporary owned service at `127.0.0.1:47785`, not a public Internet service.
+
+A separate controlled listing named **A** had no responding host. Selecting it and choosing Join Selected opened the original browser without a crash. This verifies UI dispatch, not a native join. The adapter uses directed discovery, exact native-ID/lobby-port/sender-IP matching and the original Join callback. It reports Connected only after observing a live accepted native client lobby matching the requested room; opening the browser or invoking Join never sets that status by itself.
 
 Connection configures an optional directory URL. The managed bridge registers an opaque identity, saves separate DPAPI-protected credentials for the current Windows user, and performs registration, presence heartbeats and social requests in the background. A nickname remains a display name; it does not replace the stable player ID.
 
@@ -104,9 +115,9 @@ python -m unittest discover -s directory -p 'test_*.py' -v
 
 The build compiles the library and test executables, including the exact managed native bridge with a shared-memory test fixture. Tests cover authentication, capacity, authorization, profiles, RTT, voting, promotion, kick/leave, defaults, bot-count calculations, two lobby transfers, directory leases, name-search ambiguity, public/private LAN discovery and English network errors. The Python suite starts loopback fixtures and invokes `InviteCheck.exe`, `SocialCheck.exe` and `NativeBridgeCheck.exe` for real HTTP integration. Social checks cover mutual acceptance, request rejection, inbox isolation, invitation delivery, expiry, persistence and protected client credentials. The discovery integration requires Windows and an isolated LAN with no other room advertisers. These tests do not message external contacts or deploy a service.
 
-The latest recorded checks passed 19 directory/social Python tests and six native-resource tests, plus the room selftest, lobby migration test and invitation selftest. Passing these checks does not establish a synchronized native race.
+The latest recorded checks passed 23 directory/social Python integration tests. The native bridge fixture covers queued native commands, incompatible TCP refusal, lease expiry, actual-host publication and private-room withdrawal. Earlier room selftest, lobby migration, invitation selftest and six native-resource checks also passed. These results do not establish a synchronized native race.
 
-The latest compiled native payload passed an isolated x86 fixture with 1,321 assertions and 605 relocations; nine social tests also passed. Earlier installed-build checks covered native UI early-return guards and actual execution of generated lap code for Default, 1, 60, invalid ranges and private/Classic guards. The fixture runs only in its own allocated memory and never opens the game process. It does not validate event layout, race synchronization or peers; the clean installed-build AI-fill check above covers lobby population and saved-state synchronization only.
+The latest compiled native payload passed an isolated x86 fixture with 1,521 assertions and 683 relocations, including transport observation and selected-join paths with original game APIs stubbed. The fixture runs only in its own allocated memory and never opens the game process. It does not validate peer reachability or race synchronization; the clean installed-build checks above establish the narrower host-publication, UI-dispatch and AI-fill behaviors.
 
 ## Native implementation evidence
 

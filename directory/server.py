@@ -83,6 +83,21 @@ class Directory:
             raise ValueError("Port, players and capacity must be integers")
         if not 1 <= port <= 65535 or not 1 <= capacity <= 60 or not 1 <= players <= capacity:
             raise ValueError("Invalid endpoint or player counts")
+        transport = payload.get("transport", "room-control-tcp")
+        if transport not in ("room-control-tcp", "asphalt480-udp"):
+            raise ValueError("Unsupported room transport")
+        native_id = payload.get("nativeRoomId")
+        discovery_port = payload.get("discoveryPort", 0)
+        if transport == "asphalt480-udp":
+            if not isinstance(native_id, str) or not re.fullmatch(r"[0-9A-Fa-f]{16}", native_id):
+                raise ValueError("Native room ID must contain exactly 16 hexadecimal characters")
+            native_id = native_id.lower()
+            if room_id.lower() == native_id:
+                raise ValueError("Directory room ID must be separate from the native room ID")
+            if type(discovery_port) is not int or discovery_port != 6529:
+                raise ValueError("Native discovery port must be 6529")
+        elif native_id is not None or type(discovery_port) is not int or discovery_port != 0:
+            raise ValueError("TCP room-control listings cannot contain native transport metadata")
         with self.lock:
             self.prune()
             old = self.rooms.get(room_id)
@@ -90,6 +105,8 @@ class Directory:
             if old:
                 if not self.authorized(old, token):
                     raise PermissionError("Room lease token is invalid")
+                if old["room"].get("transport", "room-control-tcp") != transport or old["room"].get("nativeRoomId") != native_id:
+                    raise ValueError("A room lease cannot change transport or native room identity")
                 issued_token = None
                 digest = old["token_digest"]
             else:
@@ -98,7 +115,10 @@ class Directory:
                 issued_token = secrets.token_urlsafe(32)
                 digest = hashlib.sha256(issued_token.encode()).digest()
             room = {"roomId": room_id, "name": name.strip(), "address": address,
-                    "port": port, "players": players, "capacity": capacity, "protocol": 1}
+                    "port": port, "players": players, "capacity": capacity, "protocol": 1,
+                    "transport": transport}
+            if transport == "asphalt480-udp":
+                room.update(nativeRoomId=native_id, discoveryPort=discovery_port)
             self.rooms[room_id] = {"room": room, "token_digest": digest,
                                    "deadline": time.monotonic() + self.lease_seconds}
             result = {"room": room, "leaseSeconds": self.lease_seconds}

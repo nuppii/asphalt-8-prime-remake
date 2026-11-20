@@ -13,5 +13,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Discovery check compilation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Invitation check compilation failed.' }
 & $compiler /nologo /target:exe /optimize+ /reference:System.Runtime.Serialization.dll "/reference:$OutputDirectory\OfflineLab.Rooms.dll" "/out:$OutputDirectory\SocialCheck.exe" (Join-Path $PSScriptRoot 'SocialCheck.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Social check compilation failed.' }
+& $compiler /nologo /target:exe /optimize+ /reference:System.Runtime.Serialization.dll "/reference:$OutputDirectory\OfflineLab.Rooms.dll" "/out:$OutputDirectory\NativeTransportCheck.exe" (Join-Path $PSScriptRoot 'NativeTransportCheck.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Native transport check compilation failed.' }
 & $compiler /nologo /target:exe /optimize+ "/reference:$OutputDirectory\OfflineLab.Rooms.dll" "/out:$OutputDirectory\InternetCheck.exe" (Join-Path $PSScriptRoot 'InternetCheck.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Internet connectivity check compilation failed.' }

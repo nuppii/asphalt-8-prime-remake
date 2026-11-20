@@ -21,10 +21,14 @@ namespace OfflineLab.Multiplayer
         [DataMember(Name="capacity")] public int Capacity { get; set; }
         [DataMember(Name="protocol")] public int Protocol { get; set; }
         [DataMember(Name="private")] public bool IsPrivate { get; set; }
+        [DataMember(Name="transport")] public string Transport { get; set; }
+        [DataMember(Name="nativeRoomId")] public string NativeRoomId { get; set; }
+        [DataMember(Name="discoveryPort")] public int DiscoveryPort { get; set; }
         internal LanRoomListing ToRoom()
         {
             return new LanRoomListing { RoomId=RoomId,Name=Name,Address=Address,Port=Port,
-                Players=Players,Capacity=Capacity,IsPrivate=IsPrivate };
+                Players=Players,Capacity=Capacity,IsPrivate=IsPrivate,Transport=Transport,
+                NativeRoomId=NativeRoomId,DiscoveryPort=DiscoveryPort };
         }
     }
 
@@ -54,6 +58,9 @@ namespace OfflineLab.Multiplayer
         [DataMember(Name="players")] public int Players;
         [DataMember(Name="capacity")] public int Capacity;
         [DataMember(Name="private")] public bool Private;
+        [DataMember(Name="transport")] public string Transport;
+        [DataMember(Name="nativeRoomId",EmitDefaultValue=false)] public string NativeRoomId;
+        [DataMember(Name="discoveryPort",EmitDefaultValue=false)] public int DiscoveryPort;
     }
 
     public static class PublicRoomDirectory
@@ -230,7 +237,8 @@ namespace OfflineLab.Multiplayer
                 LanRoomListing room=listing();
                 if(!LanRoomDiscovery.Valid(room) || room.IsPrivate)return;
                 if(roomId!=null && roomId!=room.RoomId)throw new InvalidOperationException("A directory lease cannot change rooms.");
-                var body=new Announcement {Name=room.Name,Port=room.Port,Players=room.Players,Capacity=room.Capacity,Private=false};
+                var body=new Announcement {Name=room.Name,Port=room.Port,Players=room.Players,Capacity=room.Capacity,Private=false,
+                    Transport=room.EffectiveTransport,NativeRoomId=room.NativeRoomId,DiscoveryPort=room.DiscoveryPort};
                 LeaseReply reply;
                 try { reply=(LeaseReply)PublicRoomDirectory.Request(directory,"v1/rooms/"+Uri.EscapeDataString(room.RoomId),"POST",body,token,typeof(LeaseReply)); }
                 catch(WebException ex)

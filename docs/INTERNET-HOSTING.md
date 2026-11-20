@@ -2,6 +2,8 @@
 
 The intended race server is the current player's PC. A dedicated game server or rented VPS is not a prerequisite. On a graceful host change, the race must pause, transfer to another player's PC and resume from the acknowledged state. Changing a label or transferring the experimental TCP lobby does not satisfy this requirement.
 
+**Current limit:** automatic publication of an actual native room and selected-directory dispatch into the original browser have been observed locally. No native peer joined, and no Internet race, NAT solution or native race migration has been established.
+
 ## Discovery and hosting are separate
 
 Direct address / invitation connections must work without the optional directory. A directory can list public rooms and resolve names, but never owns the simulation. The existing directory remains optional; no public service has been deployed or made mandatory.
@@ -46,6 +48,18 @@ The compiled x86 fixture exercises the actual generated wrapper and native helpe
 ![Installed native IPv4 action rejecting invalid input](images/native-direct-ipv4.jpg)
 
 Discovery alone is insufficient through many routers. Static native analysis identifies three separate endpoints: Announcer UDP 6529, the ephemeral lobby port stored at Room+0x78, and the race port at Room+0x7A published after native server start. Those real endpoints need reachability and correct advertisement; no automatic router mapping or native socket hole punching is shipped.
+
+## Native directory publication and selected joining
+
+The configured directory now receives automatic announcements from a real public native host. Listings carry `transport: "asphalt480-udp"`, a 16-hex native room ID, `discoveryPort: 6529` and the observed native UDP lobby `port`. A separate random directory ID owns the lease. Prototype `room-control-tcp` entries remain explicitly incompatible with native joining. Leaving a host room, making it private or clearing the directory configuration withdraws publication.
+
+Join Selected freshly resolves the listing, verifies native transport/identity, IPv4 endpoint, real lobby port and free capacity, then queues a sequence-acknowledged native request. Directed discovery targets the selected host. Responses must match the native room ID, lobby port and observed sender IPv4 before the original native Join callback is invoked. Connected requires a live, accepted client lobby matching the target; browser entry alone never establishes it.
+
+The clean installed build on 20 November advertised its real **ASPHALT8** room as `1/8`, native ID `f968940900000001`, UDP lobby `54551` and discovery `6529`. Windows confirmed the game's ownership of both UDP endpoints, and leaving removed the announcement. This used an owned temporary directory at `127.0.0.1:47785`; no public HTTPS directory was chosen or deployed. A separate nonresponding fixture named **A** exercised Join Selected and opened the browser without a crash. No native peer connection followed.
+
+![Controlled nonresponding native-format listing with Join Selected enabled; not a remote connection](images/native-directory-join.jpg)
+
+The latest local checks passed 23 Python integration tests and an isolated native fixture with 1,521 assertions and 683 relocations. Original game APIs are stubbed in that fixture. These checks cover metadata, preflight, command publication and acceptance guards, not real network delivery or Internet reachability. The earlier two-app same-machine discovery failure remains unresolved; publication does not bypass app-container isolation or router policy.
 
 ## Native work still required
 

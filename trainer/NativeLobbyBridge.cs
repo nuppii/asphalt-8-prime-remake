@@ -7,6 +7,7 @@ using System.Text;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Globalization;
 using OfflineLab.Multiplayer;
 
 // Network and file work stays outside the game's UI thread. Bridge readiness
@@ -31,6 +32,12 @@ internal sealed class NativeLobbyBridge : IDisposable
     private int processId;
     private uint handled;
     private bool busy, disposed;
+    private bool networkAvailable;
+    private PublicRoomAdvertiser nativeAdvertiser;
+    private volatile LanRoomListing nativeListing;
+    private sealed class ListingSource { internal volatile LanRoomListing Value; }
+    private ListingSource listingSource;
+    private string advertisedNativeId,advertisedDirectory;
     private int generation;
     private int socialView=3;
     private DateTime nextHeartbeat=DateTime.MinValue;
@@ -87,18 +94,20 @@ internal sealed class NativeLobbyBridge : IDisposable
         while(length>0 && length<text.Length && (text[length]&0xc0)==0x80)length--;
         Buffer.BlockCopy(text,0,data,0,length);NativeInjectionEngine.WriteNativeLobbyState(processId,offset,data);
     }
-    private void Word(int offset,int value){if(offset==44&&NativeInjectionEngine.NativeDirectDiscoveryReady(processId))value|=32;NativeInjectionEngine.WriteNativeLobbyState(processId,offset,BitConverter.GetBytes(value));}
+    private void Word(int offset,int value){if(offset==44){if(NativeInjectionEngine.NativeDirectDiscoveryReady(processId))value|=32;if(networkAvailable)value|=2;}NativeInjectionEngine.WriteNativeLobbyState(processId,offset,BitConverter.GetBytes(value));}
     private void Status(string message){Text(52,160,message);}
     private void SearchStatus(int code,string message){Word(48,code);Status(message);}
-    private void ClearRooms(){rooms.Clear();Word(1460,0);Word(1464,-1);}
+    private void ClearRooms(){rooms.Clear();Word(1460,0);Word(1464,-1);Word(NativeNetworkState.JoinableMask,0);}
     private bool RoomSearchVisible(){int pid;byte[] state;return NativeInjectionEngine.ReadNativeLobbyState(out pid,out state)&&pid==processId&&BitConverter.ToInt32(state,28)==2;}
     private void Poll()
     {
         if(disposed)return;
         int pid;byte[] state;
         if(!NativeInjectionEngine.ReadNativeLobbyState(out pid,out state))return;
+        bool ready=NativeInjectionEngine.NativeDirectDiscoveryReady(pid)&&NativeNetworkState.Valid(state);
         if(pid!=processId)
         {
+            StopNativeAdvertisement();networkAvailable=ready;
             processId=pid;handled=0;rooms.Clear();generation++;busy=false;
             Word(32,profile.Policy);Word(36,profile.Grid);Word(40,profile.Laps);
             Text(212,64,profile.RoomName);Text(276,32,profile.Nickname);
@@ -108,7 +117,10 @@ internal sealed class NativeLobbyBridge : IDisposable
             nextHeartbeat=DateTime.MinValue;
             return;
         }
+        if(ready!=networkAvailable){networkAvailable=ready;Word(44,BitConverter.ToInt32(state,44)&~2);}
+        UpdateNativeAdvertisement(state);
         lock(gate)while(completions.Count>0)completions.Dequeue()();
+        int refreshedPid;if(!NativeInjectionEngine.ReadNativeLobbyState(out refreshedPid,out state)||refreshedPid!=pid)return;
         uint sequence=BitConverter.ToUInt32(state,12);
         if(busy)return;
         if(sequence==handled)
@@ -142,7 +154,7 @@ internal sealed class NativeLobbyBridge : IDisposable
                 profile.RoomName=name;Save();Status("Room name saved for the next native room.");
             }
             else if(request==6)Status("Password kept for this session. Native private-room authentication is pending.");
-            else if(request==7)Status("Native race connection for directory rooms is not connected yet.");
+            else if(request==7)JoinSelected(state,pid);
             else if(request==8)Social(8,Read(state,436,1024));
             else if(request==9)
             {
@@ -156,7 +168,7 @@ internal sealed class NativeLobbyBridge : IDisposable
             {
                 string value=Read(state,436,1024).Trim();
                 if(value.Length!=0){Uri uri=new Uri(value,UriKind.Absolute);PublicRoomDirectory.Validate(uri);value=uri.AbsoluteUri;}
-                profile.DirectoryUrl=value;Save();generation++;busy=false;social=null;ClearSocial();ClearRooms();Word(48,0);nextHeartbeat=DateTime.MinValue;
+                StopNativeAdvertisement();profile.DirectoryUrl=value;Save();generation++;busy=false;social=null;ClearSocial();ClearRooms();Word(48,0);nextHeartbeat=DateTime.MinValue;
                 Text(436,1024,value);
                 Status(value.Length==0?"Directory cleared. Online social service disconnected.":"Directory saved. Connecting to the social service...");
             }
@@ -191,15 +203,75 @@ internal sealed class NativeLobbyBridge : IDisposable
                 if(Read(currentState,308,64)!=query){ClearRooms();SearchStatus(306,"Search changed. Search again to refresh the list.");return;}
                 if(error!=null){ClearRooms();SearchStatus(304,error);return;}
                 rooms=found;
+                int joinable=0;
                 for(int i=0;i<rooms.Count;i++)
                 {
-                    Text(1480+i*144,80,rooms[i].Name+"  "+rooms[i].Players+"/"+rooms[i].Capacity+(rooms[i].Players>=rooms[i].Capacity?"  FULL":""));
+                    if(NativeListingReady(rooms[i]))joinable|=1<<i;
+                    Text(1480+i*144,80,rooms[i].Name+"  "+rooms[i].Players+"/"+rooms[i].Capacity+(rooms[i].Players>=rooms[i].Capacity?"  FULL":"")+(rooms[i].IsNative?"  NATIVE":"  TCP"));
                     Text(1560+i*144,64,rooms[i].RoomId);
                 }
-                Word(1464,-1);Word(1460,rooms.Count);
-                SearchStatus(rooms.Count==0?302:301,rooms.Count==0?"No matching rooms found.":"Select a room from the list. Native directory joining is still unavailable.");
+                Word(NativeNetworkState.JoinableMask,joinable);Word(1464,-1);Word(1460,rooms.Count);
+                SearchStatus(rooms.Count==0?302:301,rooms.Count==0?"No matching rooms found.":"Select an available NATIVE room. TCP prototype rooms cannot join the game.");
             });
         });
+    }
+    private static bool NativeListingReady(LanRoomListing room)
+    {
+        if(room==null||!room.IsNative||!LanRoomDiscovery.ValidTransport(room)||room.NativeRoomId=="0000000000000000"||room.IsPrivate||room.Players>=room.Capacity||room.Port<1||room.Port>65535||Encoding.UTF8.GetByteCount(room.Name??"")>63)return false;
+        string[] parts=(room.Address??"").Split('.');if(parts.Length!=4)return false;
+        for(int i=0;i<4;i++){int value;if(parts[i].Length<1||parts[i].Length>3||!int.TryParse(parts[i],NumberStyles.None,CultureInfo.InvariantCulture,out value)||value>255||(i==0&&(value==0||value>=224)))return false;}
+        return true;
+    }
+    private void JoinSelected(byte[] state,int pid)
+    {
+        int index=BitConverter.ToInt32(state,1464),count=BitConverter.ToInt32(state,1460);
+        if(!networkAvailable||!NativeNetworkState.Valid(state))throw new InvalidOperationException("Native directory connection adapter is unavailable.");
+        int phase=BitConverter.ToInt32(state,NativeNetworkState.JoinPhase);
+        if(phase>=1&&phase<=3)throw new InvalidOperationException("A native join is already in progress.");
+        if(index<0||index>=count||index>=rooms.Count||index>=8||Read(state,1560+index*144,64)!=rooms[index].RoomId)throw new ArgumentException("Search again and select a current room.");
+        LanRoomListing selected=rooms[index];
+        if(!NativeListingReady(selected))throw new InvalidOperationException("Select a non-full native IPv4 room. TCP prototype rooms are incompatible.");
+        Uri directory=new Uri(profile.DirectoryUrl,UriKind.Absolute);int expected=generation;string query=Read(state,308,64);busy=true;
+        SearchStatus(307,"Checking the selected native room...");
+        Task.Run(()=>{
+            LanRoomListing fresh=null;string error=null;
+            try{fresh=PublicRoomDirectory.Resolve(directory,selected.RoomId,selected.Name);if(!NativeListingReady(fresh)||fresh.NativeRoomId!=selected.NativeRoomId)throw new InvalidOperationException("The selected native room changed or is full. Search again.");}
+            catch(Exception failure){error=RoomErrors.Display(failure);}
+            lock(gate)completions.Enqueue(()=>{
+                if(disposed||processId!=pid||generation!=expected)return;busy=false;
+                int now;byte[] current;
+                if(!NativeInjectionEngine.ReadNativeLobbyState(out now,out current)||now!=pid||!NativeNetworkState.Valid(current))return;
+                if(Read(current,308,64)!=query||BitConverter.ToInt32(current,1464)!=index||Read(current,1560+index*144,64)!=selected.RoomId){SearchStatus(306,"Selection changed. Choose the room again.");return;}
+                if(error!=null){Word(NativeNetworkState.JoinableMask,BitConverter.ToInt32(current,NativeNetworkState.JoinableMask)&~(1<<index));SearchStatus(308,error);return;}
+                uint high=uint.Parse(fresh.NativeRoomId.Substring(0,8),NumberStyles.HexNumber,CultureInfo.InvariantCulture),low=uint.Parse(fresh.NativeRoomId.Substring(8,8),NumberStyles.HexNumber,CultureInfo.InvariantCulture);
+                Text(NativeNetworkState.JoinAddress,16,fresh.Address);Text(NativeNetworkState.JoinName,64,fresh.Name);
+                Word(NativeNetworkState.JoinIdLow,unchecked((int)low));Word(NativeNetworkState.JoinIdHigh,unchecked((int)high));Word(NativeNetworkState.JoinLobbyPort,fresh.Port);Word(NativeNetworkState.JoinPhase,1);
+                Word(NativeNetworkState.JoinSeq,unchecked(BitConverter.ToInt32(current,NativeNetworkState.JoinSeq)+1));
+                SearchStatus(309,"Native join queued. Waiting for matching discovery and lobby confirmation.");
+            });
+        });
+    }
+    private void StopNativeAdvertisement()
+    {
+        nativeListing=null;if(listingSource!=null)listingSource.Value=null;listingSource=null;var previous=nativeAdvertiser;nativeAdvertiser=null;advertisedNativeId=null;advertisedDirectory=null;
+        if(previous!=null)Task.Run(()=>previous.Dispose());
+    }
+    private void UpdateNativeAdvertisement(byte[] state)
+    {
+        if(!NativeNetworkState.Valid(state)||string.IsNullOrWhiteSpace(profile.DirectoryUrl))
+        {if(nativeAdvertiser!=null)StopNativeAdvertisement();return;}
+        uint revision=BitConverter.ToUInt32(state,NativeNetworkState.HostRevision);
+        if((revision&1)!=0||revision!=BitConverter.ToUInt32(state,NativeNetworkState.HostEndRevision))return;
+        if(BitConverter.ToInt32(state,NativeNetworkState.HostAlive)!=1||BitConverter.ToInt32(state,NativeNetworkState.HostPrivate)!=0)
+        {if(nativeAdvertiser!=null)StopNativeAdvertisement();return;}
+        int capacity=BitConverter.ToInt32(state,NativeNetworkState.HostCapacity),players=BitConverter.ToInt32(state,NativeNetworkState.HostPlayers),port=BitConverter.ToInt32(state,NativeNetworkState.HostLobbyPort);
+        string nativeId=BitConverter.ToUInt32(state,NativeNetworkState.HostIdHigh).ToString("x8")+BitConverter.ToUInt32(state,NativeNetworkState.HostIdLow).ToString("x8"),name=Read(state,NativeNetworkState.HostName,64);
+        if(capacity<1||capacity>12||players<1||players>capacity||port<1||port>65535||name.Length==0||BitConverter.ToInt32(state,NativeNetworkState.HostDiscoveryPort)!=6529)return;
+        bool changed=nativeAdvertiser==null||advertisedNativeId!=nativeId||advertisedDirectory!=profile.DirectoryUrl;
+        if(changed)StopNativeAdvertisement();
+        nativeListing=new LanRoomListing{RoomId=changed?Guid.NewGuid().ToString("N"):nativeListing.RoomId,Name=name,Address="127.0.0.1",Port=port,Players=players,Capacity=capacity,Transport=RoomTransports.Asphalt480Udp,NativeRoomId=nativeId,DiscoveryPort=6529};
+        if(changed){advertisedNativeId=nativeId;advertisedDirectory=profile.DirectoryUrl;var source=new ListingSource{Value=nativeListing};listingSource=source;nativeAdvertiser=new PublicRoomAdvertiser(new Uri(profile.DirectoryUrl),()=>source.Value);}
+        else listingSource.Value=nativeListing;
     }
     private string SelectedId(byte[] state)
     {
@@ -312,5 +384,5 @@ internal sealed class NativeLobbyBridge : IDisposable
         Word(1472,previous>=0&&previous<count?previous:0);Word(1468,count);
     }
     private void SocialRow(int index,string label,string id){Text(2632+index*144,80,label);Text(2712+index*144,64,id);}
-    public void Dispose(){lock(gate){disposed=true;generation++;completions.Clear();}timer.Stop();timer.Dispose();}
+    public void Dispose(){lock(gate){disposed=true;generation++;completions.Clear();}StopNativeAdvertisement();timer.Stop();timer.Dispose();}
 }

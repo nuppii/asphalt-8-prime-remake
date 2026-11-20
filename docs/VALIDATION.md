@@ -1,5 +1,21 @@
 # Validation notes
 
+## Native directory connection adapter — 2026-11-20
+
+The installed pre-final build `7e82e7a0c025e7617ba424546ef657edc4a02af9c02fddc7e561b44a7c82f33a` was started without Frida for the following checks. A temporary directory was reachable only at `127.0.0.1:47785`.
+
+- Creating the actual Classic/Nevada native host lobby automatically published `ASPHALT8`, one real human of eight slots, transport `asphalt480-udp`, discovery port 6529 and lobby port 54551. The directory ID was separate from native ID `f968940900000001`. Windows UDP endpoint readback for the game confirmed the published port 54551 and discovery port 6529. AI preview entries were not counted as human members.
+- Leaving the native room removed its advertisement from the real HTTP directory. No manual announcement was used for this host-publication check.
+- A separate, explicitly nonresponding directory fixture named `A` exercised selection and joining. Its NATIVE row enabled **JOIN SELECTED ROOM**, and pressing it opened the game's original room browser without a crash. This fixture was not a connected native peer or a race; it tests dispatch and failure handling, not successful multiplayer.
+
+A subsequent bounded, read-only REA observation verified the failure result twice, 500 ms apart: `joinSeq=1`, `joinAck=1`, `joinPhase=5` (FAILED), `clientConnected=0`, `statusCode=205`, with the original SelectRoom screen still active. The message reported that no matching room was found. Evidence `ev_3be20e69702b12a263aafbbc16866a6d098774b95cc6d3d966cc5cec3eb259fe` recorded no memory writes, interceptors or native calls; its ephemeral observation detached without cleanup error. This observation followed the initial clean UI checks.
+
+The final installed build is `24add391c32a84179be3f0e538bc4b119477e89bd87e6876b2aecd9b60baaa86`. Its managed follow-up validates the observation seqlock before treating host fields as a withdrawal. The final native fixture still passed 1,521 assertions/683 relocations, and nine social tests passed again with a regression check that an in-progress observation does not withdraw the room. The original empty directory URL was restored and the temporary directory stopped; other saved values were retained. No public deployment or OS network-policy change was made.
+
+The native fixture passed 1,521 assertions and 683 image relocations. It executes the generated helper/wrapper in owned memory, using original-API stubs to check host observation, privacy, the corrected display-name getter, live-client acceptance requirements, queued discovery, rejection of wrong IPv4/port/native ID, original-row join dispatch and confirmation only for the matching accepted lobby. No target game process is opened by that fixture. Twenty-three Python integration tests passed, including real C# HTTP checks for native/legacy metadata, expired leases, command publication, duplicate join rejection, host advertisement and private-policy withdrawal. These checks do not establish a joined remote native peer, an Internet race, NAT traversal or native host migration.
+
+The first 3,784 shared-state bytes remain UI ABI v1. The independently versioned 256-byte network extension raises the managed read buffer to 4,040 bytes; its seqlock protects observed host/client metadata. Snapshot validation precedes treating an observation as a room withdrawal. This is separate from the command sequence/acknowledgement owned by the managed/native join bridge.
+
 ## Observed checks
 
 | Check | Observation |

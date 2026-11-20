@@ -89,6 +89,7 @@ namespace OfflineLab.Multiplayer
             if(invite.DirectoryUrl!=null)
             {
                 LanRoomListing room=PublicRoomDirectory.Resolve(new Uri(invite.DirectoryUrl),invite.RoomId);
+                if(room.IsNative)throw new InvalidOperationException("This is a native Asphalt UDP room. Use the native game join adapter; TCP room-control joining is not supported.");
                 if(room.Players>=room.Capacity)throw new InvalidOperationException("The room is full.");
                 return new ResolvedRoomInvitation{RoomId=room.RoomId,RoomName=room.Name,Address=room.Address,Port=room.Port,
                     IsPrivate=false,CapacityKnown=true,Players=room.Players,Capacity=room.Capacity};

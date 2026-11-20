@@ -56,6 +56,39 @@ class DirectoryTests(unittest.TestCase):
                        {"players": True}, {"name": "bad\nname"}):
             self.assertEqual(self.request("POST", "/v1/rooms/test-room", dict(self.room, **change))[0], 400)
 
+    def test_transport_default_and_native_roundtrip(self):
+        _, legacy = self.request("POST", "/v1/rooms/legacy-room", self.room)
+        self.assertEqual(legacy["room"]["transport"], "room-control-tcp")
+        native = dict(self.room, transport="asphalt480-udp", nativeRoomId="0123456789ABCDEF", discoveryPort=6529, port=49001)
+        code, created = self.request("POST", "/v1/rooms/native-directory-key", native)
+        self.assertEqual(code, 201)
+        for route in ("/v1/rooms/native-directory-key", "/v1/rooms?name=Test%20room"):
+            result = self.request("GET", route)[1]
+            room = result.get("room") or next(r for r in result["rooms"] if r["roomId"] == "native-directory-key")
+            self.assertEqual((room["transport"], room["nativeRoomId"], room["discoveryPort"], room["port"]),
+                             ("asphalt480-udp", "0123456789abcdef", 6529, 49001))
+            self.assertNotEqual(room["roomId"], room["nativeRoomId"])
+        code, renewed = self.request("POST", "/v1/rooms/native-directory-key", dict(native, port=49002), created["leaseToken"])
+        self.assertEqual(code, 200)
+        self.assertEqual(renewed["room"]["port"], 49002)
+
+    def test_invalid_transport_metadata(self):
+        native = dict(self.room, transport="asphalt480-udp", nativeRoomId="0123456789abcdef", discoveryPort=6529)
+        for change in ({"nativeRoomId": None}, {"nativeRoomId": "abcd"}, {"nativeRoomId": "0123456789abcdeg"},
+                       {"discoveryPort": 47780}, {"discoveryPort": True}, {"transport": "udp"}, {"transport": None}):
+            self.assertEqual(self.request("POST", "/v1/rooms/native-directory-key", dict(native, **change))[0], 400)
+        self.assertEqual(self.request("POST", "/v1/rooms/0123456789abcdef", native)[0], 400)
+        for change in ({"nativeRoomId": "0123456789abcdef"}, {"discoveryPort": 6529}, {"discoveryPort": None}):
+            self.assertEqual(self.request("POST", "/v1/rooms/legacy-room", dict(self.room, **change))[0], 400)
+
+    def test_lease_transport_and_native_identity_immutable(self):
+        _, legacy = self.request("POST", "/v1/rooms/legacy-room", self.room)
+        native = dict(self.room, transport="asphalt480-udp", nativeRoomId="0123456789abcdef", discoveryPort=6529)
+        self.assertEqual(self.request("POST", "/v1/rooms/legacy-room", native, legacy["leaseToken"])[0], 400)
+        _, created = self.request("POST", "/v1/rooms/native-room", native)
+        self.assertEqual(self.request("POST", "/v1/rooms/native-room", self.room, created["leaseToken"])[0], 400)
+        self.assertEqual(self.request("POST", "/v1/rooms/native-room", dict(native, nativeRoomId="fedcba9876543210"), created["leaseToken"])[0], 400)
+
     def test_expiry_and_source_address(self):
         code, result = self.request("POST", "/v1/rooms/test-room", dict(self.room, address="192.0.2.1"))
         self.assertEqual(code, 201)
@@ -121,6 +154,15 @@ class DirectoryTests(unittest.TestCase):
             self.skipTest("Build multiplayer/Build-Rooms.ps1 to run the C# integration check")
         self.directory.lease_seconds = 30
         result = subprocess.run([str(executable), "directory", self.url], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS:", result.stdout)
+
+    def test_csharp_native_transport_roundtrip_and_tcp_refusal(self):
+        executable = Path(__file__).resolve().parents[1] / "build" / "multiplayer" / "NativeTransportCheck.exe"
+        if not executable.is_file():
+            self.skipTest("Build multiplayer/Build-Rooms.ps1 to run the native transport check")
+        self.directory.lease_seconds = 30
+        result = subprocess.run([str(executable), self.url], capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("PASS:", result.stdout)
 

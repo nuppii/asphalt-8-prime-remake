@@ -33,7 +33,19 @@ Configure clients with the matching reachable **HTTPS** hostname and port. Certi
 
 Creation returns a random lease token. Renewals and deletion require `Authorization: Bearer <leaseToken>`. The token is never included in browse results. Leases expire after 120 seconds; the C# advertiser renews every 30 seconds. Private announcements and invalid player/port counts are rejected. Name search accepts exact or prefix matching with bounded pagination. Ambiguous names require explicit room selection.
 
-The announced host IP comes from the request's socket peer. The advertised TCP port must be reachable independently. The service does not provide relay, NAT traversal, reachability verification, external accounts or clans. Announcements and logs contain no room passwords.
+The announced host IP comes from the request's socket peer. The advertised endpoint must be reachable independently. The service does not provide relay, NAT traversal, reachability verification, external accounts or clans. Announcements and logs contain no room passwords.
+
+## Room transports and native publication
+
+`transport` distinguishes `room-control-tcp` (the default for older announcements) from `asphalt480-udp`. Native announcements require `nativeRoomId` containing exactly 16 hexadecimal characters and `discoveryPort` equal to 6529. Their `port` is the actual native UDP lobby port, not the prototype TCP listener or the discovery port. IDs are normalized to lowercase. The random directory `roomId` remains separate from the native ID; a lease cannot change transport or native identity.
+
+```json
+{"name":"ASPHALT8","transport":"asphalt480-udp","nativeRoomId":"f968940900000001","discoveryPort":6529,"port":54551,"players":1,"capacity":8,"private":false}
+```
+
+The managed native bridge automatically publishes when it observes a real public host room and a configured directory. It withdraws the listing when the room ends, becomes private or loses its directory configuration. A clean installed session verified actual publication and withdrawal against an owned loopback service at `127.0.0.1:47785`; the game's UDP lobby and discovery ports were independently checked in Windows.
+
+Native Join Selected resolves the lease again, checks transport/identity, IPv4 endpoint, port and available capacity, then queues the original browser/discovery path. A controlled nonresponding fixture verified browser dispatch without a crash. **No native peer connection or Internet race was established.** The prototype TCP invitation resolver rejects native UDP listings; metadata publication does not make either transport interchangeable or prove reachability. No public directory has been deployed.
 
 ## Social API
 
@@ -61,4 +73,4 @@ Run the API checks with:
 python -m unittest discover -s directory -p 'test_*.py' -v
 ```
 
-The suite starts its own loopback services and invokes `InviteCheck.exe`, `SocialCheck.exe` and `NativeBridgeCheck.exe` against them. Tests cover search ambiguity, leases, friend acceptance/rejection, authorization, presence/invitation expiry, SQLite persistence and protected native-bridge credentials. The native bridge fixture uses simulated shared memory with real HTTP requests; it does not establish working in-game callbacks or race joining. No external contacts are messaged and no public deployment is performed by these tests.
+The suite starts its own loopback services and invokes `InviteCheck.exe`, `SocialCheck.exe`, `NativeTransportCheck.exe` and `NativeBridgeCheck.exe` against them. The latest 23 Python integration checks cover search ambiguity, leases, native transport metadata, incompatible TCP refusal, queued native joins, automatic host publication/private withdrawal, friend acceptance/rejection, authorization, expiry, persistence and protected credentials. The native bridge fixture uses simulated shared memory with real HTTP requests; it does not establish native peer acceptance or race joining. No external contacts are messaged and no public deployment is performed by these tests.

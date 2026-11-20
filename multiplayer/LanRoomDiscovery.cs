@@ -7,9 +7,15 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading;
+using System.Text.RegularExpressions;
 
 namespace OfflineLab.Multiplayer
 {
+    public static class RoomTransports
+    {
+        public const string RoomControlTcp="room-control-tcp";
+        public const string Asphalt480Udp="asphalt480-udp";
+    }
     [DataContract]
     public sealed class LanRoomListing
     {
@@ -20,6 +26,11 @@ namespace OfflineLab.Multiplayer
         [DataMember] public int Players;
         [DataMember] public int Capacity;
         [DataMember] public bool IsPrivate;
+        [DataMember(EmitDefaultValue=false)] public string Transport;
+        [DataMember(EmitDefaultValue=false)] public string NativeRoomId;
+        [DataMember(EmitDefaultValue=false)] public int DiscoveryPort;
+        public string EffectiveTransport {get{return Transport??RoomTransports.RoomControlTcp;}}
+        public bool IsNative {get{return EffectiveTransport==RoomTransports.Asphalt480Udp;}}
     }
 
     [DataContract]
@@ -85,7 +96,15 @@ namespace OfflineLab.Multiplayer
         {
             return room != null && !string.IsNullOrWhiteSpace(room.RoomId) && room.RoomId.Length <= 128 &&
                 !string.IsNullOrWhiteSpace(room.Name) && room.Name.Length <= 64 && room.Port > 0 && room.Port <= 65535 &&
-                room.Players >= 0 && room.Capacity >= 1 && room.Capacity <= 60 && room.Players <= room.Capacity;
+                room.Players >= 0 && room.Capacity >= 1 && room.Capacity <= 60 && room.Players <= room.Capacity && ValidTransport(room);
+        }
+
+        public static bool ValidTransport(LanRoomListing room)
+        {
+            if(room==null)return false;
+            if(room.EffectiveTransport==RoomTransports.RoomControlTcp)return room.NativeRoomId==null&&room.DiscoveryPort==0;
+            return room.IsNative&&room.NativeRoomId!=null&&Regex.IsMatch(room.NativeRoomId,@"\A[0-9a-fA-F]{16}\z")&&
+                room.DiscoveryPort==6529&&!string.Equals(room.RoomId,room.NativeRoomId,StringComparison.OrdinalIgnoreCase);
         }
 
         internal static bool Query(byte[] data, out string nonce)
