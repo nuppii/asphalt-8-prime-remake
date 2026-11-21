@@ -8,13 +8,23 @@ This independent project supports Windows build 4.8.0.7. The MIT license covers 
 
 ## Install with one EXE
 
-1. Download **Asphalt8PrimeRemake-Setup - All-in-One.exe** (2.87 GB) from [MediaFire](https://www.mediafire.com/file/lq2w9mpfzw8a2oa/Asphalt8PrimeRemake-Setup+-+All-in-One.exe/file).
-2. Run the EXE on Windows 11, choose where to create the launcher folder, and approve the Windows administrator prompt. The EXE includes the game package and the signed Microsoft x86 framework it needs.
+1. Download **Asphalt8PrimeRemake-Setup - All-in-One.exe** (2.87 GB) from [MediaFire](https://www.mediafire.com/file/1crlixb526mtglj/Asphalt8PrimeRemake-Setup+-+All-in-One.exe/file).
+2. Run the EXE on Windows 11, choose where to create the launcher folder, and approve the Windows administrator prompt. Setup verifies the signed Microsoft x86 framework before installing the game AppX and creating the launcher.
 3. Setup opens the game after installation. For later launches, open **Asphalt 8 Prime Remake.exe** from the chosen folder. Press **Insert** for the trainer.
 
-The tested all-in-one EXE has SHA-256 `6cd52da8e9ef166da1ffac8c0db83ba05b5b03b35ccc535afd3f2fa3c44178de`.
+The tested all-in-one EXE has SHA-256 `a466c9654f12faca22487bf4e1411d52e8cd9ac846499ab604ad684f1baa1a99`.
 
 Allow about 10 GB of free space in addition to the download if staging and installation use the same drive. Windows manages the installed game and framework. The folder you choose contains the launcher. The engine stays on 4.8.0.7, and the installer has no automatic updater.
+
+### Windows Sandbox
+
+Use software rendering if the game closes after the Gameloft logo. Save the configuration below as `Asphalt8-Sandbox.wsb`, open it, then copy the installer into the new Sandbox and run it there. A clean installation was tested with this graphics setting. [Microsoft's Sandbox configuration guide](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file)
+
+```xml
+<Configuration>
+  <VGpu>Disable</VGpu>
+</Configuration>
+```
 
 ### Manual setup
 
