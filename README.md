@@ -9,8 +9,9 @@ This independent project accepts your own original Windows 4.8.0.7 package or ex
 ## Install with one EXE
 
 1. For a new installation, download **Asphalt8PrimeRemake-Setup.exe** from the [latest release](https://github.com/nuppii/asphalt-8-prime-remake/releases/latest).
-2. In Setup, choose your compatible Windows `.appx` or `.msix` package, or its already extracted game folder. Choose a parent folder for the new **Asphalt 8 Prime Remake** installation.
-3. Click **Install** and approve the Windows administrator prompt. Open **Asphalt 8 Prime Remake.exe** in the new launcher folder and press **Insert** for the trainer.
+2. Have a compatible Windows **4.8.0h (4.8.0.7)** game package ready. If you use the [community archive on MediaFire](https://www.mediafire.com/file/r7jqgh85c3f0aq1/Asphalt_8_4.8.0h_Made_By_Nukkii.zip/file), extract the ZIP first.
+3. In Setup, select the compatible `.appx` or `.msix` file, or its extracted game folder. Choose a parent folder for the new **Asphalt 8 Prime Remake** installation.
+4. Click **Install** and approve the Windows administrator prompt. Open **Asphalt 8 Prime Remake.exe** in the new launcher folder and press **Insert** for the trainer.
 
 To update a copy installed with the previous loose-layout setup, choose its existing folder. That path uses the previous Windows package family and its save data. A new packaged installation has its own app identity and profile.
 
