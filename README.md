@@ -4,18 +4,21 @@
 
 Keep a local copy of the classic game playable, customize solo races, and manage the garage through a translucent English overlay. The community cheat tables call this release **4.8.0h**; compatibility is checked against the actual executable, rather than the display name alone.
 
-This independent project accepts your own original Windows 4.8.0.7 package or extracted files. A prior game installation is optional. The MIT license covers the project's code. The original game and its assets remain separate.
+This independent project supports Windows build 4.8.0.7. The MIT license covers the project's code. The GitHub repository provides the source and the manual installer.
 
 ## Install with one EXE
 
-1. For a new installation, download **Asphalt8PrimeRemake-Setup.exe** from the [latest release](https://github.com/nuppii/asphalt-8-prime-remake/releases/latest).
-2. Have a compatible Windows **4.8.0h (4.8.0.7)** game package ready. If you use the [community archive on MediaFire](https://www.mediafire.com/file/r7jqgh85c3f0aq1/Asphalt_8_4.8.0h_Made_By_Nukkii.zip/file), extract the ZIP first.
-3. In Setup, select the compatible `.appx` or `.msix` file, or its extracted game folder. Choose a parent folder for the new **Asphalt 8 Prime Remake** installation.
-4. Click **Install** and approve the Windows administrator prompt. Open **Asphalt 8 Prime Remake.exe** in the new launcher folder and press **Insert** for the trainer.
+1. Download **Asphalt8PrimeRemake-Setup - All-in-One.exe** (2.87 GB) from [MediaFire](https://www.mediafire.com/file/lq2w9mpfzw8a2oa/Asphalt8PrimeRemake-Setup+-+All-in-One.exe/file).
+2. Run the EXE on Windows 11, choose where to create the launcher folder, and approve the Windows administrator prompt. The EXE includes the game package and the signed Microsoft x86 framework it needs.
+3. Setup opens the game after installation. For later launches, open **Asphalt 8 Prime Remake.exe** from the chosen folder. Press **Insert** for the trainer.
 
-To update a copy installed with the previous loose-layout setup, choose its existing folder. That path uses the previous Windows package family and its save data. A new packaged installation has its own app identity and profile.
+The tested all-in-one EXE has SHA-256 `6cd52da8e9ef166da1ffac8c0db83ba05b5b03b35ccc535afd3f2fa3c44178de`.
 
-Setup generates an AppX locally using the supplied game files and installs it through Windows 11. The new installation does not need Developer Mode. Windows requires administrator approval for this unsigned local package. Setup installs the bundled, signed x86 `Microsoft.VCLibs.120.00` dependency if missing. Allow approximately 10 GB of free space during staging and installation if both use the same drive. The engine stays on 4.8.0.7. Setup has no automatic updater. [Microsoft's unsigned AppX deployment documentation](https://learn.microsoft.com/en-us/windows/msix/package/unsigned-package)
+Allow about 10 GB of free space in addition to the download if staging and installation use the same drive. Windows manages the installed game and framework. The folder you choose contains the launcher. The engine stays on 4.8.0.7, and the installer has no automatic updater.
+
+### Manual setup
+
+If you already have a compatible 4.8.0h (4.8.0.7) Windows game package, you can use **Asphalt8PrimeRemake-Setup.exe** from the [GitHub release](https://github.com/nuppii/asphalt-8-prime-remake/releases/latest). Select the `.appx` or `.msix` file, or its extracted folder, when prompted. To update a copy created by the previous loose-layout setup, select that copy's existing folder to keep its Windows package family and save data. A new packaged installation starts with its own profile.
 
 The installer includes the Classic bot-race and TAB standings hooks. A real Classic race with bots was exercised locally. Clean installation was verified in Windows Sandbox using software rendering. See the [validation results](docs/VALIDATION.md) for test coverage.
 
